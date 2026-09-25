@@ -1,7 +1,10 @@
 package mcpcmd
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -25,8 +28,7 @@ func TestHandlerAuth(t *testing.T) {
 		t.Fatalf("OpenDir() error = %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	server := newServer(bundle.NewBundle(store, bundle.NewMemCatalog()))
-	ts := httptest.NewServer(newHandler(server, "/okf", "secret"))
+	ts := httptest.NewServer(newHandler(bundle.NewBundle(store, bundle.NewMemCatalog()), "/okf", "secret"))
 	t.Cleanup(ts.Close)
 
 	t.Run("valid token in path connects", func(t *testing.T) {
@@ -90,7 +92,7 @@ func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
 		t.Fatalf("OpenDir() error = %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	ts := httptest.NewServer(newHandler(newServer(bundle.NewBundle(store, bundle.NewMemCatalog())), "/mcp", ""))
+	ts := httptest.NewServer(newHandler(bundle.NewBundle(store, bundle.NewMemCatalog()), "/mcp", ""))
 	t.Cleanup(ts.Close)
 
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader("{}"))
@@ -114,7 +116,7 @@ func TestHandlerDiscover(t *testing.T) {
 		t.Fatalf("OpenDir() error = %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	ts := httptest.NewServer(newHandler(newServer(bundle.NewBundle(store, bundle.NewMemCatalog())), "/mcp", ""))
+	ts := httptest.NewServer(newHandler(bundle.NewBundle(store, bundle.NewMemCatalog()), "/mcp", ""))
 	t.Cleanup(ts.Close)
 
 	const discover = `{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
@@ -131,5 +133,74 @@ func TestHandlerDiscover(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"2026-07-28"`) {
 		t.Errorf("status = %d, body = %s; want 200 advertising 2026-07-28", resp.StatusCode, body)
+	}
+}
+
+func TestHandlerDump(t *testing.T) {
+	store, err := bundle.OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenDir() error = %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	b := bundle.NewBundle(store, bundle.NewMemCatalog())
+	want := map[string]string{
+		"index.md":           "# Index\n",
+		"metrics/revenue.md": "---\ntype: metric\n---\nRevenue.\n",
+	}
+	for p, content := range want {
+		if err := b.Write(t.Context(), p, content); err != nil {
+			t.Fatalf("Write(%q) error = %v", p, err)
+		}
+	}
+	ts := httptest.NewServer(newHandler(b, "/mcp", "secret"))
+	t.Cleanup(ts.Close)
+
+	tests := []struct {
+		name, path, authz string
+		want              int
+	}{
+		{"missing token", "/dump", "", http.StatusUnauthorized},
+		{"wrong token in path", "/dump/wrong", "", http.StatusUnauthorized},
+		{"bearer token", "/dump", "Bearer secret", http.StatusOK},
+		{"token in path", "/dump/secret", "", http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, _ := http.NewRequest(http.MethodGet, ts.URL+tt.path, nil)
+			if tt.authz != "" {
+				req.Header.Set("Authorization", tt.authz)
+			}
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != tt.want {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tt.want)
+			}
+			if resp.StatusCode != http.StatusOK {
+				return
+			}
+			zr, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				t.Fatalf("gzip.NewReader() error = %v", err)
+			}
+			got := make(map[string]string)
+			tr := tar.NewReader(zr)
+			for {
+				hdr, err := tr.Next()
+				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("tar Next() error = %v", err)
+				}
+				data, _ := io.ReadAll(tr)
+				got[hdr.Name] = string(data)
+			}
+			if !maps.Equal(got, want) {
+				t.Errorf("archive = %v, want %v", got, want)
+			}
+		})
 	}
 }

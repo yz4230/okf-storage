@@ -1,11 +1,15 @@
 package bundle
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/yz4230/okf-storage/internal/okf"
 )
@@ -256,4 +260,37 @@ func index(ctx context.Context, catalog Catalog, path string, doc *okf.Document)
 		return catalog.Delete(ctx, path)
 	}
 	return catalog.Put(ctx, path, doc.Frontmatter)
+}
+
+// Dump writes every document in the bundle to w as a gzip-compressed tar
+// archive, with paths relative to the bundle root. Documents deleted while
+// dumping are left out.
+func (b *Bundle) Dump(ctx context.Context, w io.Writer) error {
+	zw := gzip.NewWriter(w)
+	tw := tar.NewWriter(zw)
+	now := time.Now()
+	err := eachPage(func(req PageRequest) (Page, error) {
+		return b.store.Tree(ctx, ".", -1, req)
+	}, func(path string) error {
+		content, _, err := b.store.Read(ctx, path)
+		if errors.Is(err, ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		hdr := &tar.Header{Name: path, Mode: 0o644, Size: int64(len(content)), ModTime: now}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		_, err = io.WriteString(tw, content)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	return zw.Close()
 }

@@ -61,7 +61,7 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 	if token == "" {
 		slog.Warn("serving without authentication; set " + tokenEnv + " to require a bearer token")
 	}
-	handler := newHandler(newServer(b), path, token)
+	handler := newHandler(b, path, token)
 	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
 	errCh := make(chan error, 1)
@@ -88,7 +88,8 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 	return nil
 }
 
-// newHandler serves server at path. A non-empty token makes every request
+// newHandler serves the MCP server for b at path, and a tar.gz download of
+// the whole bundle at GET /dump. A non-empty token makes every request
 // require "Authorization: Bearer <token>", or, for clients that cannot send
 // headers, the token as a trailing path segment ("<path>/<token>"). A request
 // carrying an Authorization header is judged by the header alone.
@@ -97,21 +98,27 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 // cannot drive an unauthenticated local server. With a token that check is
 // redundant, and it would block hosted clients such as ChatGPT that send an
 // Origin header.
-func newHandler(server *mcp.Server, path, token string) http.Handler {
+func newHandler(b *bundle.Bundle, path, token string) http.Handler {
+	server := newServer(b)
 	var h http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
 		// Stateless is required to negotiate protocol 2026-07-28, which
 		// clients such as ChatGPT use exclusively. No tool relies on a session.
 		&mcp.StreamableHTTPOptions{Stateless: true, Logger: slog.Default()},
 	)
+	dump := dumpHandler(b)
 	mux := http.NewServeMux()
 	if token == "" {
 		mux.Handle(path, http.NewCrossOriginProtection().Handler(h))
+		mux.Handle("GET "+dumpPath, dump)
 		return logRequests(mux, "")
 	}
 	h = requireToken(h, token)
 	mux.Handle(path, h)
 	mux.Handle(strings.TrimSuffix(path, "/")+"/{token}", h)
+	dump = requireToken(dump, token)
+	mux.Handle("GET "+dumpPath, dump)
+	mux.Handle("GET "+dumpPath+"/{token}", dump)
 	return logRequests(mux, token)
 }
 

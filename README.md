@@ -46,6 +46,15 @@ OKF_STORAGE_TOKEN=$(openssl rand -hex 32) go run . mcp
 
 The server shuts down gracefully on `SIGINT` / `SIGTERM`.
 
+### Dump
+
+`GET /dump` downloads every document in the bundle as a `tar.gz` archive, with paths relative to the bundle root.
+It requires the same token as the MCP endpoint (`Authorization: Bearer <token>`, or `/dump/<token>`):
+
+```bash
+curl -fOJ -H "Authorization: Bearer $OKF_STORAGE_TOKEN" http://localhost:8080/dump
+```
+
 ## Docker
 
 The image runs `mcp --addr :8080 --dir /data` as a non-root user:
@@ -104,6 +113,7 @@ mise run build
 │       ├── server.go    # MCP server construction
 │       ├── tools.go     # MCP tool definitions
 │       ├── resources.go # MCP resource definitions
+│       ├── dump.go      # GET /dump tar.gz download
 │       ├── instructions.md # server instructions sent on initialization
 │       ├── guide.md     # agent guide served as okf://guide
 │       └── spec.md      # OKF v0.2 specification served as okf://spec
