@@ -2,6 +2,7 @@ package mcpcmd
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -10,14 +11,21 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
+// tokenEnv names the environment variable holding the bearer token. It is
+// read from the environment rather than a flag to keep it out of process
+// listings.
+const tokenEnv = "OKF_STORAGE_TOKEN"
+
 var flags struct {
 	addr string
 	dir  string
+	path string
 }
 
 // Cmd serves the MCP server over Streamable HTTP.
@@ -27,16 +35,17 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return serve(ctx, flags.addr, flags.dir)
+		return serve(ctx, flags.addr, flags.dir, flags.path, os.Getenv(tokenEnv))
 	},
 }
 
 func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
 	Cmd.Flags().StringVar(&flags.dir, "dir", ".", "Knowledge bundle root directory")
+	Cmd.Flags().StringVar(&flags.path, "path", "/mcp", "HTTP path of the MCP endpoint")
 }
 
-func serve(ctx context.Context, addr, dir string) error {
+func serve(ctx context.Context, addr, dir, path, token string) error {
 	store, err := bundle.OpenDir(dir)
 	if err != nil {
 		return err
@@ -48,20 +57,15 @@ func serve(ctx context.Context, addr, dir string) error {
 	}
 	b := bundle.NewBundle(store, catalog)
 
-	server := newServer(b)
-	handler := mcp.NewStreamableHTTPHandler(
-		func(*http.Request) *mcp.Server { return server },
-		&mcp.StreamableHTTPOptions{Logger: slog.Default()},
-	)
-
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", http.NewCrossOriginProtection().Handler(handler))
-
-	srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	if token == "" {
+		slog.Warn("serving without authentication; set " + tokenEnv + " to require a bearer token")
+	}
+	handler := newHandler(newServer(b), path, token)
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("MCP server listening", "addr", addr, "endpoint", "/mcp", "dir", dir)
+		slog.Info("MCP server listening", "addr", addr, "endpoint", path, "dir", dir, "auth", token != "")
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -81,4 +85,25 @@ func serve(ctx context.Context, addr, dir string) error {
 		return err
 	}
 	return nil
+}
+
+// newHandler serves server at path. A non-empty token makes every request
+// require "Authorization: Bearer <token>".
+func newHandler(server *mcp.Server, path, token string) http.Handler {
+	var h http.Handler = mcp.NewStreamableHTTPHandler(
+		func(*http.Request) *mcp.Server { return server },
+		&mcp.StreamableHTTPOptions{Logger: slog.Default()},
+	)
+	if token != "" {
+		verify := func(_ context.Context, got string, _ *http.Request) (*auth.TokenInfo, error) {
+			if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
+				return nil, auth.ErrInvalidToken
+			}
+			return &auth.TokenInfo{}, nil
+		}
+		h = auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{AllowMissingExpiration: true})(h)
+	}
+	mux := http.NewServeMux()
+	mux.Handle(path, http.NewCrossOriginProtection().Handler(h))
+	return mux
 }

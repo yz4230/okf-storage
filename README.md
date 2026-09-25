@@ -34,7 +34,25 @@ Enable debug logging with the global `--verbose` / `-v` flag:
 go run . -v mcp
 ```
 
+Use `--path` to serve the MCP endpoint at a different path (default: `/mcp`).
+
+Set `OKF_STORAGE_TOKEN` to require `Authorization: Bearer <token>` on every request.
+Without it the server accepts unauthenticated requests, so always set it when the server is reachable from the network:
+
+```bash
+OKF_STORAGE_TOKEN=$(openssl rand -hex 32) go run . mcp
+```
+
 The server shuts down gracefully on `SIGINT` / `SIGTERM`.
+
+## Docker
+
+The image runs `mcp --addr :8080 --dir /data` as a non-root user:
+
+```bash
+docker build -t okf-storage .
+docker run --rm -p 8080:8080 -v okf-data:/data -e OKF_STORAGE_TOKEN=... okf-storage
+```
 
 ## Tools
 
