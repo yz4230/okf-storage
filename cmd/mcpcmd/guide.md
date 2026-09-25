@@ -163,8 +163,8 @@ Conventional leading words are `**Creation**`, `**Update**`,
   `status: deprecated` and link to its replacement. Delete only documents that
   are wrong, duplicated or unreferenced, and fix the links and index entries
   that pointed at them.
-- **Moving** a concept means writing it at the new path, deleting the old one,
-  and updating every link and index entry that referred to the old path.
+- **Moving** a concept: `move` it to the new path, then update every link and
+  index entry that referred to the old path.
 - Set `stale_after` on facts that are known to expire, and recheck concepts
   whose `stale_after` has passed.
 

@@ -154,6 +154,22 @@ func (b *Bundle) Delete(ctx context.Context, path string) error {
 	return syncEntry(ctx, b.store, b.catalog, path, nil, "")
 }
 
+// Move renames the document at from to to. It fails with ErrExists if a
+// document is already at to.
+func (b *Bundle) Move(ctx context.Context, from, to string) error {
+	if err := b.store.Move(ctx, from, to); err != nil {
+		return err
+	}
+	doc, ver, err := load(ctx, b.store, to)
+	if err != nil {
+		return err
+	}
+	if err := syncEntry(ctx, b.store, b.catalog, to, doc, ver); err != nil {
+		return err
+	}
+	return syncEntry(ctx, b.store, b.catalog, from, nil, "")
+}
+
 func (b *Bundle) List(ctx context.Context, dir string) ([]Entry, error) {
 	return b.store.List(ctx, dir)
 }

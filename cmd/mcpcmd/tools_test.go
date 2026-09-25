@@ -103,3 +103,30 @@ func TestSearchRejectsInvalidFilter(t *testing.T) {
 		t.Errorf("search with a list value succeeded, want an error")
 	}
 }
+
+func TestMove(t *testing.T) {
+	cs, b := connect(t)
+	for _, p := range []string{"a.md", "b.md"} {
+		if err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+	}
+	move := func(from, to string) *mcp.CallToolResult {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "move", Arguments: map[string]any{"from": from, "to": to}})
+		if err != nil {
+			t.Fatalf("CallTool(move) error = %v", err)
+		}
+		return res
+	}
+
+	if res := move("a.md", "b.md"); !res.IsError {
+		t.Errorf("move onto an existing document succeeded, want an error")
+	}
+	if res := move("a.md", "metrics/a.md"); res.IsError {
+		t.Fatalf("move failed: %v", res.Content)
+	}
+	got := callPaths(t, cs, "search", map[string]any{"filter": map[string]any{"type": "Metric"}})
+	if want := []string{"b.md", "metrics/a.md"}; !slices.Equal(got.Paths, want) {
+		t.Errorf("search after move = %v, want %v", got.Paths, want)
+	}
+}

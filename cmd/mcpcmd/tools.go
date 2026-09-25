@@ -25,6 +25,11 @@ type editInput struct {
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"replace every occurrence of old_string"`
 }
 
+type moveInput struct {
+	From string `json:"from" jsonschema:"path of the document to move"`
+	To   string `json:"to" jsonschema:"new path; must not already hold a document"`
+}
+
 type listInput struct {
 	Dir string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root; defaults to the root"`
 }
@@ -117,6 +122,17 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 			return nil, nil, err
 		}
 		return textResult(fmt.Sprintf("deleted %s", in.Path)), nil, nil
+	})
+
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "move",
+		Description: "Move or rename a document, keeping its content. Fails if a document already exists at the new path. Links and index entries pointing at the old path are not updated; fix them afterwards.",
+		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false)},
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveInput) (*mcp.CallToolResult, any, error) {
+		if err := b.Move(ctx, in.From, in.To); err != nil {
+			return nil, nil, err
+		}
+		return textResult(fmt.Sprintf("moved %s to %s", in.From, in.To)), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

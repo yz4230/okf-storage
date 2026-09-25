@@ -155,3 +155,40 @@ func TestDirStoreConditionalWrite(t *testing.T) {
 		t.Errorf("Write(missing, ifMatch) error = %v, want %v", err, ErrConflict)
 	}
 }
+
+func TestDirStoreMove(t *testing.T) {
+	ctx := t.Context()
+	r, err := OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenDir() error = %v", err)
+	}
+	defer r.Close()
+	for _, p := range []string{"a.md", "b.md"} {
+		if _, err := r.Write(ctx, p, p, ""); err != nil {
+			t.Fatalf("Write(%q) error = %v", p, err)
+		}
+	}
+
+	if err := r.Move(ctx, "a.md", "b.md"); !errors.Is(err, ErrExists) {
+		t.Errorf("Move() onto existing error = %v, want %v", err, ErrExists)
+	}
+	if err := r.Move(ctx, "missing.md", "c.md"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Move() missing error = %v, want %v", err, ErrNotFound)
+	}
+	if err := r.Move(ctx, "a.md", "../a.md"); err == nil {
+		t.Errorf("Move() out of root succeeded, want an error")
+	}
+
+	if err := r.Move(ctx, "a.md", "sub/dir/c.md"); err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+	if _, _, err := r.Read(ctx, "a.md"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("Read(a.md) after Move error = %v, want %v", err, ErrNotFound)
+	}
+	if data, _, err := r.Read(ctx, "sub/dir/c.md"); err != nil || data != "a.md" {
+		t.Errorf("Read(sub/dir/c.md) = %q, %v, want %q", data, err, "a.md")
+	}
+	if data, _, _ := r.Read(ctx, "b.md"); data != "b.md" {
+		t.Errorf("Read(b.md) = %q, want it untouched", data)
+	}
+}

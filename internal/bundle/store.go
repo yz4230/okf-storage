@@ -20,6 +20,7 @@ var (
 	ErrNoMatch        = errors.New("old string not found in document")
 	ErrAmbiguousMatch = errors.New("old string matches more than once")
 	ErrConflict       = errors.New("document was modified concurrently")
+	ErrExists         = errors.New("document already exists")
 )
 
 // Version identifies the content of a document at the time it was read, like
@@ -38,6 +39,9 @@ type Store interface {
 	// that version; otherwise it fails with ErrConflict.
 	Write(ctx context.Context, path string, content string, ifMatch Version) (Version, error)
 	Delete(ctx context.Context, path string) error
+	// Move renames the document at from to to, keeping its content. It fails
+	// with ErrExists rather than overwrite a document already at to.
+	Move(ctx context.Context, from, to string) error
 	// List returns the markdown documents and subdirectories directly under
 	// dir, like ls. Use "." for the bundle root.
 	List(ctx context.Context, dir string) ([]Entry, error)
@@ -126,6 +130,29 @@ func (r *DirStore) Delete(_ context.Context, path string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return notFound(path, r.root.Remove(path))
+}
+
+func (r *DirStore) Move(_ context.Context, from, to string) error {
+	if err := validPath(from); err != nil {
+		return err
+	}
+	if err := validPath(to); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.root.MkdirAll(filepath.Dir(to), 0o755); err != nil {
+		return err
+	}
+	// Link fails if to exists, unlike Rename, so a document written there by
+	// another process is never clobbered.
+	if err := r.root.Link(from, to); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("%w: %s", ErrExists, to)
+		}
+		return notFound(from, err)
+	}
+	return r.root.Remove(from)
 }
 
 func (r *DirStore) List(_ context.Context, dir string) ([]Entry, error) {

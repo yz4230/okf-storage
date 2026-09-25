@@ -300,3 +300,17 @@ func TestEachPage(t *testing.T) {
 		t.Errorf("eachPage() visited %v in %d fetches, err = %v; want %v in 2", got, fetches, err, all)
 	}
 }
+
+func TestBundleMove(t *testing.T) {
+	ctx := t.Context()
+	b, _, _ := newTestBundle(t)
+	if err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if err := b.Move(ctx, "a.md", "metrics/a.md"); err != nil {
+		t.Fatalf("Move() error = %v", err)
+	}
+	if got := paths(b.Search(ctx, map[string]any{"type": "Metric"}, PageRequest{})); !slices.Equal(got, []string{"metrics/a.md"}) {
+		t.Errorf("Search(Metric) after Move = %v, want [metrics/a.md]", got)
+	}
+}
