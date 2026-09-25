@@ -42,10 +42,11 @@ func serve(ctx context.Context, addr, dir string) error {
 		return err
 	}
 	defer store.Close()
-	b, err := bundle.OpenBundle(ctx, store, bundle.NewMemCatalog())
-	if err != nil {
+	catalog := bundle.NewMemCatalog()
+	if err := bundle.Reindex(ctx, store, catalog); err != nil {
 		return err
 	}
+	b := bundle.NewBundle(store, catalog)
 
 	server := newServer(b)
 	handler := mcp.NewStreamableHTTPHandler(

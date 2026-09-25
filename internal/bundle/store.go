@@ -2,6 +2,8 @@ package bundle
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,17 +18,21 @@ var (
 	ErrNotFound       = errors.New("document not found")
 	ErrNoMatch        = errors.New("old string not found in document")
 	ErrAmbiguousMatch = errors.New("old string matches more than once")
+	ErrConflict       = errors.New("document was modified concurrently")
 )
+
+// Version identifies the content of a document at the time it was read, like
+// an HTTP ETag. It is opaque to callers and only compared for equality.
+type Version string
 
 // Store holds the raw files of a knowledge bundle keyed by a slash-separated
 // path relative to the bundle root, e.g. "metrics/revenue.md".
 type Store interface {
-	Read(ctx context.Context, path string) (string, error)
-	Write(ctx context.Context, path string, content string) error
-	// Edit replaces oldString with newString by exact match, like Claude
-	// Code's Edit tool. oldString must occur exactly once unless replaceAll is
-	// set, in which case every occurrence is replaced.
-	Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error
+	Read(ctx context.Context, path string) (string, Version, error)
+	// Write stores content at path and returns its new version. If ifMatch is
+	// non-empty, the write only succeeds when the stored document still has
+	// that version; otherwise it fails with ErrConflict.
+	Write(ctx context.Context, path string, content string, ifMatch Version) (Version, error)
 	Delete(ctx context.Context, path string) error
 	// List returns the markdown documents and subdirectories directly under
 	// dir, like ls. Use "." for the bundle root.
@@ -67,46 +73,40 @@ func (r *DirStore) Close() error {
 	return r.root.Close()
 }
 
-func (r *DirStore) Read(_ context.Context, path string) (string, error) {
+func (r *DirStore) Read(_ context.Context, path string) (string, Version, error) {
+	if err := validPath(path); err != nil {
+		return "", "", err
+	}
+	data, err := r.root.ReadFile(path)
+	if err != nil {
+		return "", "", notFound(path, err)
+	}
+	return string(data), versionOf(data), nil
+}
+
+func (r *DirStore) Write(_ context.Context, path string, content string, ifMatch Version) (Version, error) {
 	if err := validPath(path); err != nil {
 		return "", err
 	}
-	data, err := r.root.ReadFile(path)
-	return string(data), notFound(path, err)
-}
-
-func (r *DirStore) Write(_ context.Context, path string, content string) error {
-	if err := validPath(path); err != nil {
-		return err
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if ifMatch != "" {
+		cur, err := r.root.ReadFile(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		if err != nil || versionOf(cur) != ifMatch {
+			return "", fmt.Errorf("%w: %s", ErrConflict, path)
+		}
+	}
 	if err := r.root.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
+		return "", err
 	}
-	return r.root.WriteFile(path, []byte(content), 0o644)
-}
-
-func (r *DirStore) Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error {
-	if oldString == "" {
-		return errors.New("old string must not be empty")
+	data := []byte(content)
+	if err := r.root.WriteFile(path, data, 0o644); err != nil {
+		return "", err
 	}
-	if oldString == newString {
-		return errors.New("old string and new string must differ")
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	content, err := r.Read(ctx, path)
-	if err != nil {
-		return err
-	}
-	switch n := strings.Count(content, oldString); {
-	case n == 0:
-		return fmt.Errorf("%w: %s", ErrNoMatch, path)
-	case n > 1 && !replaceAll:
-		return fmt.Errorf("%w: %d occurrences in %s", ErrAmbiguousMatch, n, path)
-	}
-	return r.root.WriteFile(path, []byte(strings.ReplaceAll(content, oldString, newString)), 0o644)
+	return versionOf(data), nil
 }
 
 func (r *DirStore) Delete(_ context.Context, path string) error {
@@ -176,6 +176,13 @@ func isHidden(d fs.DirEntry) bool {
 
 func isDocument(d fs.DirEntry) bool {
 	return d.Type().IsRegular() && path.Ext(d.Name()) == ".md"
+}
+
+// versionOf derives a version from content, so that a DirStore needs no
+// metadata beyond the files themselves.
+func versionOf(data []byte) Version {
+	sum := sha256.Sum256(data)
+	return Version(hex.EncodeToString(sum[:]))
 }
 
 func validPath(path string) error {
