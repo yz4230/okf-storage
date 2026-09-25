@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 )
@@ -66,27 +67,27 @@ func (r *DirStore) Close() error {
 	return r.root.Close()
 }
 
-func (r *DirStore) Read(_ context.Context, name string) (string, error) {
-	if err := validName(name); err != nil {
+func (r *DirStore) Read(_ context.Context, path string) (string, error) {
+	if err := validPath(path); err != nil {
 		return "", err
 	}
-	data, err := r.root.ReadFile(name)
-	return string(data), notFound(name, err)
+	data, err := r.root.ReadFile(path)
+	return string(data), notFound(path, err)
 }
 
-func (r *DirStore) Write(_ context.Context, name string, content string) error {
-	if err := validName(name); err != nil {
+func (r *DirStore) Write(_ context.Context, path string, content string) error {
+	if err := validPath(path); err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.root.MkdirAll(path.Dir(name), 0o755); err != nil {
+	if err := r.root.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return r.root.WriteFile(name, []byte(content), 0o644)
+	return r.root.WriteFile(path, []byte(content), 0o644)
 }
 
-func (r *DirStore) Edit(ctx context.Context, name, oldString, newString string, replaceAll bool) error {
+func (r *DirStore) Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error {
 	if oldString == "" {
 		return errors.New("old string must not be empty")
 	}
@@ -95,26 +96,26 @@ func (r *DirStore) Edit(ctx context.Context, name, oldString, newString string, 
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	content, err := r.Read(ctx, name)
+	content, err := r.Read(ctx, path)
 	if err != nil {
 		return err
 	}
 	switch n := strings.Count(content, oldString); {
 	case n == 0:
-		return fmt.Errorf("%w: %s", ErrNoMatch, name)
+		return fmt.Errorf("%w: %s", ErrNoMatch, path)
 	case n > 1 && !replaceAll:
-		return fmt.Errorf("%w: %d occurrences in %s", ErrAmbiguousMatch, n, name)
+		return fmt.Errorf("%w: %d occurrences in %s", ErrAmbiguousMatch, n, path)
 	}
-	return r.root.WriteFile(name, []byte(strings.ReplaceAll(content, oldString, newString)), 0o644)
+	return r.root.WriteFile(path, []byte(strings.ReplaceAll(content, oldString, newString)), 0o644)
 }
 
-func (r *DirStore) Delete(_ context.Context, name string) error {
-	if err := validName(name); err != nil {
+func (r *DirStore) Delete(_ context.Context, path string) error {
+	if err := validPath(path); err != nil {
 		return err
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return notFound(name, r.root.Remove(name))
+	return notFound(path, r.root.Remove(path))
 }
 
 func (r *DirStore) List(_ context.Context, dir string) ([]Entry, error) {
@@ -177,16 +178,16 @@ func isDocument(d fs.DirEntry) bool {
 	return d.Type().IsRegular() && path.Ext(d.Name()) == ".md"
 }
 
-func validName(name string) error {
-	if !fs.ValidPath(name) || name == "." {
-		return fmt.Errorf("invalid document path %q", name)
+func validPath(path string) error {
+	if !fs.ValidPath(path) || path == "." {
+		return fmt.Errorf("invalid document path %q", path)
 	}
 	return nil
 }
 
-func notFound(name string, err error) error {
+func notFound(path string, err error) error {
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%w: %s", ErrNotFound, name)
+		return fmt.Errorf("%w: %s", ErrNotFound, path)
 	}
 	return err
 }
