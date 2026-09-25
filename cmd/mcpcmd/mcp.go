@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -88,22 +89,42 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 }
 
 // newHandler serves server at path. A non-empty token makes every request
-// require "Authorization: Bearer <token>".
+// require "Authorization: Bearer <token>", or, for clients that cannot send
+// headers, the token as a trailing path segment ("<path>/<token>"). A request
+// carrying an Authorization header is judged by the header alone.
 func newHandler(server *mcp.Server, path, token string) http.Handler {
 	var h http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{Logger: slog.Default()},
 	)
-	if token != "" {
-		verify := func(_ context.Context, got string, _ *http.Request) (*auth.TokenInfo, error) {
-			if subtle.ConstantTimeCompare([]byte(got), []byte(token)) != 1 {
-				return nil, auth.ErrInvalidToken
-			}
-			return &auth.TokenInfo{}, nil
-		}
-		h = auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{AllowMissingExpiration: true})(h)
-	}
 	mux := http.NewServeMux()
+	if token != "" {
+		h = requireToken(h, token)
+		mux.Handle(strings.TrimSuffix(path, "/")+"/{token}", http.NewCrossOriginProtection().Handler(h))
+	}
 	mux.Handle(path, http.NewCrossOriginProtection().Handler(h))
 	return mux
+}
+
+func requireToken(next http.Handler, token string) http.Handler {
+	valid := func(got string) bool { return subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 }
+	verify := func(_ context.Context, got string, _ *http.Request) (*auth.TokenInfo, error) {
+		if !valid(got) {
+			return nil, auth.ErrInvalidToken
+		}
+		return &auth.TokenInfo{}, nil
+	}
+	bearer := auth.RequireBearerToken(verify, &auth.RequireBearerTokenOptions{AllowMissingExpiration: true})(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got := r.PathValue("token")
+		if r.Header.Get("Authorization") != "" || got == "" {
+			bearer.ServeHTTP(w, r)
+			return
+		}
+		if !valid(got) {
+			http.Error(w, "invalid token", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

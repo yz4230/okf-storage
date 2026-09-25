@@ -37,7 +37,8 @@ go run . -v mcp
 Use `--path` to serve the MCP endpoint at a different path (default: `/mcp`).
 
 Set `OKF_STORAGE_TOKEN` to require `Authorization: Bearer <token>` on every request.
-Without it the server accepts unauthenticated requests, so always set it when the server is reachable from the network:
+Clients that cannot send headers (e.g. ChatGPT connectors) can instead put the token in the URL, `/mcp/<token>`; it is only checked when the request has no `Authorization` header.
+When the variable is unset, the server accepts unauthenticated requests, so always set it when the server is reachable from the network:
 
 ```bash
 OKF_STORAGE_TOKEN=$(openssl rand -hex 32) go run . mcp

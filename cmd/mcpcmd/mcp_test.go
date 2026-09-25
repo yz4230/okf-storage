@@ -28,6 +28,15 @@ func TestHandlerAuth(t *testing.T) {
 	ts := httptest.NewServer(newHandler(server, "/okf", "secret"))
 	t.Cleanup(ts.Close)
 
+	t.Run("valid token in path connects", func(t *testing.T) {
+		client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
+		cs, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/okf/secret"}, nil)
+		if err != nil {
+			t.Fatalf("Connect() error = %v", err)
+		}
+		cs.Close()
+	})
+
 	t.Run("valid token connects", func(t *testing.T) {
 		client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
 		cs, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{
@@ -48,6 +57,9 @@ func TestHandlerAuth(t *testing.T) {
 		{"missing token", "/okf", "", http.StatusUnauthorized},
 		{"wrong token", "/okf", "Bearer wrong", http.StatusUnauthorized},
 		{"other path", "/mcp", "Bearer secret", http.StatusNotFound},
+		{"wrong token in path", "/okf/wrong", "", http.StatusUnauthorized},
+		{"header wins over path", "/okf/secret", "Bearer wrong", http.StatusUnauthorized},
+		{"token only served under path", "/secret", "", http.StatusNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
