@@ -13,6 +13,8 @@ func TestParseDocument(t *testing.T) {
 		doc  string
 		keys []string
 		body string
+		none bool // no frontmatter at all, as opposed to empty
+
 	}{
 		{
 			name: "frontmatter and body",
@@ -41,11 +43,13 @@ func TestParseDocument(t *testing.T) {
 			name: "no frontmatter",
 			doc:  "# Index\n\n* [A](a.md)\n",
 			body: "# Index\n\n* [A](a.md)\n",
+			none: true,
 		},
 		{
 			name: "empty document",
 			doc:  "",
 			body: "",
+			none: true,
 		},
 		{
 			name: "delimiter inside body is kept",
@@ -60,7 +64,10 @@ func TestParseDocument(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ParseDocument() error = %v", err)
 			}
-			keys := slices.Sorted(maps.Keys(maps.Collect(d.Frontmatter.Iter())))
+			keys := slices.Sorted(maps.Keys(d.Frontmatter))
+			if (d.Frontmatter == nil) != tt.none {
+				t.Errorf("Frontmatter = %v, want nil = %v", d.Frontmatter, tt.none)
+			}
 			if !slices.Equal(keys, tt.keys) {
 				t.Errorf("keys = %q, want %q", keys, tt.keys)
 			}

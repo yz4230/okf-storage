@@ -10,7 +10,7 @@ import (
 	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
-func connect(t *testing.T) (*mcp.ClientSession, bundle.Bundle) {
+func connect(t *testing.T) (*mcp.ClientSession, *bundle.Bundle) {
 	t.Helper()
 	store, err := bundle.OpenDir(t.TempDir())
 	if err != nil {

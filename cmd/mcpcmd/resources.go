@@ -27,7 +27,7 @@ const (
 	docPrefix = "okf://docs/"
 )
 
-func addResources(s *mcp.Server, b bundle.Bundle) {
+func addResources(s *mcp.Server, b *bundle.Bundle) {
 	s.AddResource(&mcp.Resource{
 		URI:         guideURI,
 		Name:        "guide",

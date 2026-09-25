@@ -1,14 +1,20 @@
 package okf
 
 import (
+	"errors"
 	"fmt"
 	"strings"
+)
+
+var (
+	ErrInvalidDocument    = errors.New("invalid document")
+	ErrInvalidFrontmatter = errors.New("invalid frontmatter")
 )
 
 const frontmatterDelim = "---"
 
 type Document struct {
-	Frontmatter *Frontmatter
+	Frontmatter Frontmatter
 	Body        string
 }
 
@@ -16,8 +22,7 @@ type Document struct {
 //
 // A document that does not start with a `---` line has no frontmatter and is
 // returned with a nil Frontmatter and doc as its Body. This is the case for
-// reserved files such as index.md and log.md (§8, §9). Use
-// [Frontmatter.Validate] to check that a concept document is conformant.
+// reserved files such as index.md and log.md (§8, §9).
 func ParseDocument(doc string) (*Document, error) {
 	first := doc
 	if i := strings.IndexByte(doc, '\n'); i >= 0 {

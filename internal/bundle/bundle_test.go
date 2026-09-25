@@ -17,7 +17,7 @@ func paths(p Page, _ error) []string {
 	return p.Paths
 }
 
-func mustFrontmatter(t *testing.T, yaml string) *okf.Frontmatter {
+func mustFrontmatter(t *testing.T, yaml string) okf.Frontmatter {
 	t.Helper()
 	doc, err := okf.ParseDocument("---\n" + yaml + "\n---\n")
 	if err != nil {
@@ -26,7 +26,7 @@ func mustFrontmatter(t *testing.T, yaml string) *okf.Frontmatter {
 	return doc.Frontmatter
 }
 
-func newTestBundle(t *testing.T) (Bundle, *DirStore, *MemCatalog) {
+func newTestBundle(t *testing.T) (*Bundle, *DirStore, *MemCatalog) {
 	t.Helper()
 	store, err := OpenDir(t.TempDir())
 	if err != nil {
@@ -262,7 +262,7 @@ func TestBundleConcurrentWritesLeaveCatalogConsistent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load() error = %v", err)
 	}
-	want, _ := doc.Frontmatter.Get("type")
+	want := doc.Frontmatter["type"]
 	if got := paths(catalog.Search(ctx, map[string]any{"type": want}, PageRequest{})); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search(%v) = %v, want [a.md]", want, got)
 	}

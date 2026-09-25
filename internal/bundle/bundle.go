@@ -10,38 +10,23 @@ import (
 	"github.com/yz4230/okf-storage/internal/okf"
 )
 
-type Bundle interface {
-	Read(ctx context.Context, path string) (string, error)
-	Search(ctx context.Context, filter map[string]any, page PageRequest) (Page, error)
-	Write(ctx context.Context, path string, content string) error
-	// Edit replaces oldString with newString by exact match, like Claude
-	// Code's Edit tool. oldString must occur exactly once unless replaceAll is
-	// set, in which case every occurrence is replaced.
-	Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error
-	Delete(ctx context.Context, path string) error
-	List(ctx context.Context, dir string) ([]Entry, error)
-	Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error)
-}
-
 // maxEditAttempts bounds how often Edit retries after a concurrent write.
 const maxEditAttempts = 3
 
-// bundle keeps the catalog derived from the store without holding a lock, so
+// Bundle keeps the catalog derived from the store without holding a lock, so
 // that several processes may share one store and catalog. The store is the
 // source of truth; after changing it, a writer syncs the catalog entry and
 // then checks the store is unchanged, re-deriving the entry if it is not.
 // Whichever writer puts last therefore puts what the store holds. An entry can
 // only go stale if a process dies between the two steps, which Reindex
 // repairs.
-type bundle struct {
+type Bundle struct {
 	store   Store
 	catalog Catalog
 }
 
-var _ Bundle = (*bundle)(nil)
-
-func NewBundle(store Store, catalog Catalog) Bundle {
-	return &bundle{store: store, catalog: catalog}
+func NewBundle(store Store, catalog Catalog) *Bundle {
+	return &Bundle{store: store, catalog: catalog}
 }
 
 // Reindex makes catalog match the frontmatter of every document in store,
@@ -97,16 +82,16 @@ func eachPage(fetch func(PageRequest) (Page, error), f func(path string) error) 
 	}
 }
 
-func (b *bundle) Read(ctx context.Context, path string) (string, error) {
+func (b *Bundle) Read(ctx context.Context, path string) (string, error) {
 	content, _, err := b.store.Read(ctx, path)
 	return content, err
 }
 
-func (b *bundle) Search(ctx context.Context, filter map[string]any, page PageRequest) (Page, error) {
+func (b *Bundle) Search(ctx context.Context, filter map[string]any, page PageRequest) (Page, error) {
 	return b.catalog.Search(ctx, filter, page)
 }
 
-func (b *bundle) Write(ctx context.Context, path string, content string) error {
+func (b *Bundle) Write(ctx context.Context, path string, content string) error {
 	doc, err := okf.ParseDocument(content)
 	if err != nil {
 		return err
@@ -118,7 +103,10 @@ func (b *bundle) Write(ctx context.Context, path string, content string) error {
 	return syncEntry(ctx, b.store, b.catalog, path, doc, ver)
 }
 
-func (b *bundle) Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error {
+// Edit replaces oldString with newString by exact match, like Claude Code's
+// Edit tool. oldString must occur exactly once unless replaceAll is set, in
+// which case every occurrence is replaced.
+func (b *Bundle) Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error {
 	if oldString == "" {
 		return errors.New("old string must not be empty")
 	}
@@ -159,18 +147,18 @@ func (b *bundle) Edit(ctx context.Context, path, oldString, newString string, re
 	return syncEntry(ctx, b.store, b.catalog, path, doc, ver)
 }
 
-func (b *bundle) Delete(ctx context.Context, path string) error {
+func (b *Bundle) Delete(ctx context.Context, path string) error {
 	if err := b.store.Delete(ctx, path); err != nil {
 		return err
 	}
 	return syncEntry(ctx, b.store, b.catalog, path, nil, "")
 }
 
-func (b *bundle) List(ctx context.Context, dir string) ([]Entry, error) {
+func (b *Bundle) List(ctx context.Context, dir string) ([]Entry, error) {
 	return b.store.List(ctx, dir)
 }
 
-func (b *bundle) Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error) {
+func (b *Bundle) Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error) {
 	return b.store.Tree(ctx, dir, depth, page)
 }
 

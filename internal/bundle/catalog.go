@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"sync"
 
@@ -15,7 +16,7 @@ var ErrInvalidFilter = errors.New("invalid search filter")
 // Catalog records concept frontmatter by path so concepts can be searched
 // by metadata. Implementations must pass catalogtest.Run.
 type Catalog interface {
-	Put(ctx context.Context, path string, fm *okf.Frontmatter) error
+	Put(ctx context.Context, path string, fm okf.Frontmatter) error
 	Delete(ctx context.Context, path string) error
 	// Search returns the page of paths, sorted in byte order, of documents
 	// whose frontmatter matches every key in filter. An empty filter matches
@@ -49,16 +50,16 @@ func ValidateFilter(filter map[string]any) error {
 // frontmatter, so callers must not mutate one after putting it.
 type MemCatalog struct {
 	mu   sync.RWMutex
-	docs map[string]*okf.Frontmatter
+	docs map[string]okf.Frontmatter
 }
 
 var _ Catalog = (*MemCatalog)(nil)
 
 func NewMemCatalog() *MemCatalog {
-	return &MemCatalog{docs: make(map[string]*okf.Frontmatter)}
+	return &MemCatalog{docs: make(map[string]okf.Frontmatter)}
 }
 
-func (x *MemCatalog) Put(_ context.Context, path string, fm *okf.Frontmatter) error {
+func (x *MemCatalog) Put(_ context.Context, path string, fm okf.Frontmatter) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	x.docs[path] = fm
@@ -88,9 +89,9 @@ func (x *MemCatalog) Search(_ context.Context, filter map[string]any, page PageR
 	return paginate(names, page), nil
 }
 
-func matches(fm *okf.Frontmatter, filter map[string]any) bool {
+func matches(fm okf.Frontmatter, filter map[string]any) bool {
 	for key, want := range filter {
-		got, ok := fm.Get(key)
+		got, ok := fm[key]
 		if !ok {
 			return false
 		}
@@ -122,31 +123,13 @@ func equal(got, want any) bool {
 // number converts any Go numeric type to float64. Integers beyond 2^53 lose
 // precision, which frontmatter values are not expected to reach.
 func number(v any) (float64, bool) {
-	switch n := v.(type) {
-	case int:
-		return float64(n), true
-	case int8:
-		return float64(n), true
-	case int16:
-		return float64(n), true
-	case int32:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case uint:
-		return float64(n), true
-	case uint8:
-		return float64(n), true
-	case uint16:
-		return float64(n), true
-	case uint32:
-		return float64(n), true
-	case uint64:
-		return float64(n), true
-	case float32:
-		return float64(n), true
-	case float64:
-		return n, true
+	switch rv := reflect.ValueOf(v); {
+	case rv.CanInt():
+		return float64(rv.Int()), true
+	case rv.CanUint():
+		return float64(rv.Uint()), true
+	case rv.CanFloat():
+		return rv.Float(), true
 	}
 	return 0, false
 }

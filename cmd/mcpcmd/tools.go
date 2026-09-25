@@ -74,7 +74,7 @@ type listOutput struct {
 	Entries []bundle.Entry `json:"entries"`
 }
 
-func addTools(s *mcp.Server, b bundle.Bundle) {
+func addTools(s *mcp.Server, b *bundle.Bundle) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "read",
 		Description: "Read a document from the knowledge bundle.",

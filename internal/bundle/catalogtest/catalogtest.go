@@ -20,7 +20,7 @@ func Run(t *testing.T, newCatalog func(t *testing.T) bundle.Catalog) {
 	t.Run("Pagination", func(t *testing.T) { testPagination(t, newCatalog(t)) })
 }
 
-func frontmatter(t *testing.T, yaml string) *okf.Frontmatter {
+func frontmatter(t *testing.T, yaml string) okf.Frontmatter {
 	t.Helper()
 	doc, err := okf.ParseDocument("---\n" + yaml + "\n---\n")
 	if err != nil {

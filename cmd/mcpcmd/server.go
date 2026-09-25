@@ -8,7 +8,7 @@ import (
 )
 
 // newServer builds the MCP server. Register tools, resources and prompts here.
-func newServer(b bundle.Bundle) *mcp.Server {
+func newServer(b *bundle.Bundle) *mcp.Server {
 	version := "(devel)"
 	if info, ok := debug.ReadBuildInfo(); ok {
 		version = info.Main.Version
