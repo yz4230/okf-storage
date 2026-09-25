@@ -47,22 +47,22 @@ func TestDirStore(t *testing.T) {
 		t.Errorf("List(missing) error = %v, want %v", err, ErrNotFound)
 	}
 
-	names, err := r.Tree(ctx, ".", -1)
+	page, err := r.Tree(ctx, ".", -1, PageRequest{})
 	if err != nil {
 		t.Fatalf("Tree() error = %v", err)
 	}
-	if want := []string{"index.md", "metrics/revenue.md"}; !slices.Equal(names, want) {
-		t.Errorf("Tree(.) = %v, want %v", names, want)
+	if want := []string{"index.md", "metrics/revenue.md"}; !slices.Equal(page.Paths, want) || page.Next != "" {
+		t.Errorf("Tree(.) = %+v, want %v", page, want)
 	}
-	names, err = r.Tree(ctx, ".", 1)
-	if want := []string{"index.md"}; err != nil || !slices.Equal(names, want) {
-		t.Errorf("Tree(., 1) = %v, %v, want %v", names, err, want)
+	page, err = r.Tree(ctx, ".", 1, PageRequest{})
+	if want := []string{"index.md"}; err != nil || !slices.Equal(page.Paths, want) {
+		t.Errorf("Tree(., 1) = %v, %v, want %v", page.Paths, err, want)
 	}
-	names, err = r.Tree(ctx, "metrics", 1)
-	if want := []string{"metrics/revenue.md"}; err != nil || !slices.Equal(names, want) {
-		t.Errorf("Tree(metrics) = %v, %v, want %v", names, err, want)
+	page, err = r.Tree(ctx, "metrics", 1, PageRequest{})
+	if want := []string{"metrics/revenue.md"}; err != nil || !slices.Equal(page.Paths, want) {
+		t.Errorf("Tree(metrics) = %v, %v, want %v", page.Paths, err, want)
 	}
-	if _, err := r.Tree(ctx, "missing", -1); !errors.Is(err, ErrNotFound) {
+	if _, err := r.Tree(ctx, "missing", -1, PageRequest{}); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Tree(missing) error = %v, want %v", err, ErrNotFound)
 	}
 
@@ -74,6 +74,39 @@ func TestDirStore(t *testing.T) {
 	}
 	if err := r.Delete(ctx, "index.md"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Delete() missing error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestDirStoreTreePagination(t *testing.T) {
+	ctx := t.Context()
+	r, err := OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenDir() error = %v", err)
+	}
+	defer r.Close()
+	// WalkDir visits a/b.md before a.md; byte order puts a.md first.
+	for _, p := range []string{"a/b.md", "a.md", "b.md", "a/c/d.md"} {
+		if _, err := r.Write(ctx, p, "", ""); err != nil {
+			t.Fatalf("Write(%q) error = %v", p, err)
+		}
+	}
+
+	var got [][]string
+	req := PageRequest{Limit: 2}
+	for {
+		page, err := r.Tree(ctx, ".", -1, req)
+		if err != nil {
+			t.Fatalf("Tree(%+v) error = %v", req, err)
+		}
+		got = append(got, page.Paths)
+		if page.Next == "" || len(got) > 5 {
+			break
+		}
+		req.After = page.Next
+	}
+	want := [][]string{{"a.md", "a/b.md"}, {"a/c/d.md", "b.md"}}
+	if !slices.EqualFunc(got, want, slices.Equal) {
+		t.Errorf("pages = %v, want %v", got, want)
 	}
 }
 

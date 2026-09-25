@@ -29,17 +29,45 @@ type listInput struct {
 	Dir string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root; defaults to the root"`
 }
 
+// pageInput selects a page of a path listing.
+type pageInput struct {
+	After string `json:"after,omitempty" jsonschema:"the next value from the previous call, to continue a listing; omit for the first page"`
+	Limit int    `json:"limit,omitempty" jsonschema:"maximum number of paths to return; defaults to 100"`
+}
+
+// defaultLimit and maxLimit keep one listing small enough for a model's
+// context; larger results are read page by page.
+const (
+	defaultLimit = 100
+	maxLimit     = 1000
+)
+
+func (in pageInput) request() bundle.PageRequest {
+	limit := in.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	return bundle.PageRequest{After: in.After, Limit: min(limit, maxLimit)}
+}
+
 type treeInput struct {
 	Dir   string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root; defaults to the root"`
 	Depth *int   `json:"depth,omitempty" jsonschema:"maximum depth, where 1 is the documents directly under dir; omit for no limit"`
+	pageInput
 }
 
 type searchInput struct {
-	Filter map[string]any `json:"filter,omitempty" jsonschema:"frontmatter fields to match, e.g. {\"type\": \"metric\"}; a list field matches if it contains the value; empty matches every document with frontmatter"`
+	Filter map[string]any `json:"filter,omitempty" jsonschema:"frontmatter fields to match, e.g. {\"type\": \"metric\"}; values must be strings, numbers or booleans and match by type, so 2 does not match \"2\"; a list field matches if it contains the value; empty matches every document with frontmatter"`
+	pageInput
 }
 
 type pathsOutput struct {
 	Paths []string `json:"paths"`
+	Next  string   `json:"next,omitempty" jsonschema:"present when more paths follow; pass it as after to get them"`
+}
+
+func pathsResult(page bundle.Page, err error) (*mcp.CallToolResult, pathsOutput, error) {
+	return nil, pathsOutput{Paths: nonNil(page.Paths), Next: page.Next}, err
 }
 
 type listOutput struct {
@@ -102,7 +130,7 @@ func addTools(s *mcp.Server, b bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "tree",
-		Description: "List the paths of markdown documents under a directory recursively, like tree -L depth.",
+		Description: "List the paths of markdown documents under a directory recursively, like tree -L depth. Results are paged; if next is returned, call again with it as after.",
 		InputSchema: treeInputSchema(),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in treeInput) (*mcp.CallToolResult, pathsOutput, error) {
@@ -110,28 +138,36 @@ func addTools(s *mcp.Server, b bundle.Bundle) {
 		if in.Depth != nil {
 			depth = *in.Depth
 		}
-		paths, err := b.Tree(ctx, orRoot(in.Dir), depth)
-		return nil, pathsOutput{Paths: nonNil(paths)}, err
+		return pathsResult(b.Tree(ctx, orRoot(in.Dir), depth, in.request()))
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search",
-		Description: "Find documents whose frontmatter matches every field in filter.",
+		Description: "Find documents whose frontmatter matches every field in filter. Results are paged; if next is returned, call again with it as after.",
+		InputSchema: inputSchema[searchInput](),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, pathsOutput, error) {
-		paths, err := b.Search(ctx, in.Filter)
-		return nil, pathsOutput{Paths: nonNil(paths)}, err
+		return pathsResult(b.Search(ctx, in.Filter, in.request()))
 	})
 }
 
 // treeInputSchema is the inferred schema for treeInput with depth limited to
 // positive values, so that 0 can't be mistaken for "no limit".
 func treeInputSchema() *jsonschema.Schema {
-	schema, err := jsonschema.For[treeInput](nil)
+	schema := inputSchema[treeInput]()
+	schema.Properties["depth"].Minimum = new(1.0)
+	return schema
+}
+
+// inputSchema is the inferred schema for T with the page limit bounded.
+func inputSchema[T any]() *jsonschema.Schema {
+	schema, err := jsonschema.For[T](nil)
 	if err != nil {
 		panic(err)
 	}
-	schema.Properties["depth"].Minimum = new(1.0)
+	limit := schema.Properties["limit"]
+	limit.Minimum = new(1.0)
+	limit.Maximum = new(float64(maxLimit))
 	return schema
 }
 

@@ -12,7 +12,7 @@ import (
 
 type Bundle interface {
 	Read(ctx context.Context, path string) (string, error)
-	Search(ctx context.Context, filter map[string]any) ([]string, error)
+	Search(ctx context.Context, filter map[string]any, page PageRequest) (Page, error)
 	Write(ctx context.Context, path string, content string) error
 	// Edit replaces oldString with newString by exact match, like Claude
 	// Code's Edit tool. oldString must occur exactly once unless replaceAll is
@@ -20,7 +20,7 @@ type Bundle interface {
 	Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error
 	Delete(ctx context.Context, path string) error
 	List(ctx context.Context, dir string) ([]Entry, error)
-	Tree(ctx context.Context, dir string, depth int) ([]string, error)
+	Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error)
 }
 
 // maxEditAttempts bounds how often Edit retries after a concurrent write.
@@ -50,33 +50,51 @@ func NewBundle(store Store, catalog Catalog) Bundle {
 // as a MemCatalog, or to repair one after a crash. Documents whose
 // frontmatter fails to parse are left out and logged.
 func Reindex(ctx context.Context, store Store, catalog Catalog) error {
-	paths, err := store.Tree(ctx, ".", -1)
-	if err != nil {
-		return err
-	}
-	seen := make(map[string]bool, len(paths))
-	for _, path := range paths {
+	seen := make(map[string]bool)
+	err := eachPage(func(req PageRequest) (Page, error) {
+		return store.Tree(ctx, ".", -1, req)
+	}, func(path string) error {
 		seen[path] = true
 		doc, ver, err := load(ctx, store, path)
 		if err != nil {
 			return err
 		}
-		if err := syncEntry(ctx, store, catalog, path, doc, ver); err != nil {
-			return err
-		}
-	}
-	indexed, err := catalog.Search(ctx, nil)
+		return syncEntry(ctx, store, catalog, path, doc, ver)
+	})
 	if err != nil {
 		return err
 	}
-	for _, path := range indexed {
-		if !seen[path] {
-			if err := syncEntry(ctx, store, catalog, path, nil, ""); err != nil {
+	return eachPage(func(req PageRequest) (Page, error) {
+		return catalog.Search(ctx, nil, req)
+	}, func(path string) error {
+		if seen[path] {
+			return nil
+		}
+		return syncEntry(ctx, store, catalog, path, nil, "")
+	})
+}
+
+// reindexPageSize is how many paths Reindex fetches at a time.
+const reindexPageSize = 1000
+
+// eachPage calls f for every path of every page that fetch returns.
+func eachPage(fetch func(PageRequest) (Page, error), f func(path string) error) error {
+	req := PageRequest{Limit: reindexPageSize}
+	for {
+		page, err := fetch(req)
+		if err != nil {
+			return err
+		}
+		for _, path := range page.Paths {
+			if err := f(path); err != nil {
 				return err
 			}
 		}
+		if page.Next == "" {
+			return nil
+		}
+		req.After = page.Next
 	}
-	return nil
 }
 
 func (b *bundle) Read(ctx context.Context, path string) (string, error) {
@@ -84,8 +102,8 @@ func (b *bundle) Read(ctx context.Context, path string) (string, error) {
 	return content, err
 }
 
-func (b *bundle) Search(ctx context.Context, filter map[string]any) ([]string, error) {
-	return b.catalog.Search(ctx, filter)
+func (b *bundle) Search(ctx context.Context, filter map[string]any, page PageRequest) (Page, error) {
+	return b.catalog.Search(ctx, filter, page)
 }
 
 func (b *bundle) Write(ctx context.Context, path string, content string) error {
@@ -152,8 +170,8 @@ func (b *bundle) List(ctx context.Context, dir string) ([]Entry, error) {
 	return b.store.List(ctx, dir)
 }
 
-func (b *bundle) Tree(ctx context.Context, dir string, depth int) ([]string, error) {
-	return b.store.Tree(ctx, dir, depth)
+func (b *bundle) Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error) {
+	return b.store.Tree(ctx, dir, depth, page)
 }
 
 // syncEntry makes the catalog entry for path reflect the store, starting from

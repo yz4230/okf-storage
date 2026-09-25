@@ -7,7 +7,24 @@ import (
 	"slices"
 	"sync"
 	"testing"
+
+	"github.com/yz4230/okf-storage/internal/okf"
 )
+
+// paths drops the error of a search or tree call for use in assertions,
+// where a failed call shows up as missing paths.
+func paths(p Page, _ error) []string {
+	return p.Paths
+}
+
+func mustFrontmatter(t *testing.T, yaml string) *okf.Frontmatter {
+	t.Helper()
+	doc, err := okf.ParseDocument("---\n" + yaml + "\n---\n")
+	if err != nil {
+		t.Fatalf("ParseDocument() error = %v", err)
+	}
+	return doc.Frontmatter
+}
 
 func newTestBundle(t *testing.T) (Bundle, *DirStore, *MemCatalog) {
 	t.Helper()
@@ -72,10 +89,10 @@ func TestBundleEditUpdatesCatalog(t *testing.T) {
 	if err := b.Edit(ctx, "a.md", "Metric", "Playbook", false); err != nil {
 		t.Fatalf("Edit() error = %v", err)
 	}
-	if got, _ := b.Search(ctx, map[string]any{"type": "Playbook"}); !slices.Equal(got, []string{"a.md"}) {
+	if got := paths(b.Search(ctx, map[string]any{"type": "Playbook"}, PageRequest{})); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search(Playbook) = %v, want [a.md]", got)
 	}
-	if got, _ := b.Search(ctx, map[string]any{"type": "Metric"}); got != nil {
+	if got := paths(b.Search(ctx, map[string]any{"type": "Metric"}, PageRequest{})); got != nil {
 		t.Errorf("Search(Metric) = %v, want none", got)
 	}
 }
@@ -136,7 +153,7 @@ func TestReindex(t *testing.T) {
 	if err := Reindex(ctx, store, catalog); err != nil {
 		t.Fatalf("Reindex() error = %v", err)
 	}
-	if got, _ := catalog.Search(ctx, nil); !slices.Equal(got, []string{"metrics/revenue.md"}) {
+	if got := paths(catalog.Search(ctx, nil, PageRequest{})); !slices.Equal(got, []string{"metrics/revenue.md"}) {
 		t.Errorf("Search() after Reindex = %v, want [metrics/revenue.md]", got)
 	}
 }
@@ -150,7 +167,7 @@ func TestBundleWriteDropsRemovedFrontmatter(t *testing.T) {
 	if err := b.Write(ctx, "a.md", "# plain\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	if got, _ := b.Search(ctx, nil); got != nil {
+	if got := paths(b.Search(ctx, nil, PageRequest{})); got != nil {
 		t.Errorf("Search() = %v, want none", got)
 	}
 }
@@ -172,7 +189,7 @@ func TestBundleRejectsInvalidFrontmatterWithoutWriting(t *testing.T) {
 	if got, _ := b.Read(ctx, "a.md"); got != orig {
 		t.Errorf("content = %q, want unchanged %q", got, orig)
 	}
-	if got, _ := b.Search(ctx, map[string]any{"type": "Metric"}); !slices.Equal(got, []string{"a.md"}) {
+	if got := paths(b.Search(ctx, map[string]any{"type": "Metric"}, PageRequest{})); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search() = %v, want [a.md]", got)
 	}
 }
@@ -213,7 +230,7 @@ func TestBundleCatalogFollowsInterleavedWriter(t *testing.T) {
 	if err := b.Write(ctx, "a.md", "---\ntype: Mine\n---\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	if got, _ := b.Search(ctx, map[string]any{"type": "Theirs"}); !slices.Equal(got, []string{"a.md"}) {
+	if got := paths(b.Search(ctx, map[string]any{"type": "Theirs"}, PageRequest{})); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search(Theirs) after Write = %v, want [a.md]", got)
 	}
 
@@ -221,7 +238,7 @@ func TestBundleCatalogFollowsInterleavedWriter(t *testing.T) {
 	if err := b.Delete(ctx, "a.md"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if got, _ := b.Search(ctx, map[string]any{"type": "Recreated"}); !slices.Equal(got, []string{"a.md"}) {
+	if got := paths(b.Search(ctx, map[string]any{"type": "Recreated"}, PageRequest{})); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search(Recreated) after Delete = %v, want [a.md]", got)
 	}
 }
@@ -246,10 +263,10 @@ func TestBundleConcurrentWritesLeaveCatalogConsistent(t *testing.T) {
 		t.Fatalf("load() error = %v", err)
 	}
 	want, _ := doc.Frontmatter.Get("type")
-	if got, _ := catalog.Search(ctx, map[string]any{"type": want}); !slices.Equal(got, []string{"a.md"}) {
+	if got := paths(catalog.Search(ctx, map[string]any{"type": want}, PageRequest{})); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search(%v) = %v, want [a.md]", want, got)
 	}
-	if got, _ := catalog.Search(ctx, nil); len(got) != 1 {
+	if got := paths(catalog.Search(ctx, nil, PageRequest{})); len(got) != 1 {
 		t.Errorf("catalog has %d entries, want 1", len(got))
 	}
 }
@@ -262,7 +279,24 @@ func TestReindexDropsOrphans(t *testing.T) {
 	if err := Reindex(ctx, store, catalog); err != nil {
 		t.Fatalf("Reindex() error = %v", err)
 	}
-	if got, _ := catalog.Search(ctx, nil); got != nil {
+	if got := paths(catalog.Search(ctx, nil, PageRequest{})); got != nil {
 		t.Errorf("Search() after Reindex = %v, want none", got)
+	}
+}
+
+func TestEachPage(t *testing.T) {
+	all := []string{"a.md", "b.md", "c.md"}
+	var fetches int
+	var got []string
+	err := eachPage(func(req PageRequest) (Page, error) {
+		fetches++
+		req.Limit = 2
+		return paginate(all, req), nil
+	}, func(path string) error {
+		got = append(got, path)
+		return nil
+	})
+	if err != nil || !slices.Equal(got, all) || fetches != 2 {
+		t.Errorf("eachPage() visited %v in %d fetches, err = %v; want %v in 2", got, fetches, err, all)
 	}
 }

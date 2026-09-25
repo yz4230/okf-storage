@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -40,10 +41,11 @@ type Store interface {
 	// List returns the markdown documents and subdirectories directly under
 	// dir, like ls. Use "." for the bundle root.
 	List(ctx context.Context, dir string) ([]Entry, error)
-	// Tree returns the paths of markdown documents under dir, recursively,
-	// like tree -L depth. Depth 1 is the documents directly under dir; -1
-	// means no limit. Use "." for the bundle root.
-	Tree(ctx context.Context, dir string, depth int) ([]string, error)
+	// Tree returns the page of paths, sorted in byte order, of markdown
+	// documents under dir, recursively, like tree -L depth. Depth 1 is the
+	// documents directly under dir; -1 means no limit. Use "." for the bundle
+	// root.
+	Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error)
 }
 
 type Entry struct {
@@ -147,9 +149,9 @@ func (r *DirStore) List(_ context.Context, dir string) ([]Entry, error) {
 	return entries, nil
 }
 
-func (r *DirStore) Tree(ctx context.Context, dir string, depth int) ([]string, error) {
+func (r *DirStore) Tree(ctx context.Context, dir string, depth int, page PageRequest) (Page, error) {
 	if !fs.ValidPath(dir) {
-		return nil, fmt.Errorf("invalid directory path %q", dir)
+		return Page{}, fmt.Errorf("invalid directory path %q", dir)
 	}
 	var names []string
 	err := fs.WalkDir(r.root.FS(), dir, func(p string, d fs.DirEntry, err error) error {
@@ -167,7 +169,12 @@ func (r *DirStore) Tree(ctx context.Context, dir string, depth int) ([]string, e
 		}
 		return nil
 	})
-	return names, notFound(dir, err)
+	if err != nil {
+		return Page{}, notFound(dir, err)
+	}
+	// WalkDir visits "a/b.md" before "a.md", so restore byte order.
+	slices.Sort(names)
+	return paginate(names, page), nil
 }
 
 // relDepth returns the number of path elements in p below dir.
