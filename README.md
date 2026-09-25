@@ -29,6 +29,13 @@ go run . -v mcp
 
 The server shuts down gracefully on `SIGINT` / `SIGTERM`.
 
+## Build
+
+```bash
+mise run build
+./.output/okf-storage mcp
+```
+
 ## Project Structure
 
 ```text
