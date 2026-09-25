@@ -14,7 +14,7 @@ func TestInstructions(t *testing.T) {
 	if !strings.HasPrefix(got, instructions) || instructions == "" {
 		t.Errorf("Instructions = %q, want prefix %q", got, instructions)
 	}
-	if !strings.Contains(got, "no documents with frontmatter yet") {
+	if !strings.Contains(got, "no concepts with frontmatter yet") {
 		t.Errorf("Instructions = %q, want an empty-bundle overview", got)
 	}
 }
@@ -54,7 +54,7 @@ func TestInstructionsOverview(t *testing.T) {
 	}
 	got := connectClient()
 	for _, want := range []string{
-		"3 documents with frontmatter",
+		"3 concepts with frontmatter",
 		"there is no root index.md",
 		"- a.md\n- b/\n- notes/\n",
 		"- `type`: Metric (2), Playbook (1)\n",
@@ -71,6 +71,9 @@ func TestInstructionsOverview(t *testing.T) {
 	got = connectClient()
 	if want := "<index.md>\n# Metrics\n\n* [A](a.md) - The A metric.\n</index.md>"; !strings.Contains(got, want) {
 		t.Errorf("Instructions = %q, want it to contain %q", got, want)
+	}
+	if !strings.Contains(got, "3 concepts with frontmatter") {
+		t.Errorf("Instructions = %q, want index.md left out of the count", got)
 	}
 	if strings.Contains(got, "okf_version") {
 		t.Errorf("Instructions = %q, want index.md frontmatter left out", got)

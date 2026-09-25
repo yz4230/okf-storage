@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	pathpkg "path"
 	"slices"
 	"strings"
 
@@ -71,6 +72,10 @@ func overview(ctx context.Context, b *bundle.Bundle) (string, error) {
 			return "", err
 		}
 		for _, path := range page.Paths {
+			// The root index.md may carry okf_version, but is not a concept.
+			if base := pathpkg.Base(path); base == "index.md" || base == "log.md" {
+				continue
+			}
 			content, err := b.Read(ctx, path)
 			if errors.Is(err, bundle.ErrNotFound) {
 				continue
@@ -98,10 +103,10 @@ func overview(ctx context.Context, b *bundle.Bundle) (string, error) {
 		req.After = page.Next
 	}
 	if n == 0 {
-		sb.WriteString("The bundle has no documents with frontmatter yet.\n")
+		sb.WriteString("The bundle has no concepts with frontmatter yet.\n")
 		return sb.String(), nil
 	}
-	fmt.Fprintf(&sb, "The bundle has %d documents with frontmatter.\n", n)
+	fmt.Fprintf(&sb, "The bundle has %d concepts with frontmatter.\n", n)
 
 	index, err := b.Read(ctx, "index.md")
 	switch {
