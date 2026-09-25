@@ -21,6 +21,13 @@ Use `--addr` to change the listen address:
 go run . mcp --addr 0.0.0.0:9000
 ```
 
+Use `--dir` to choose the knowledge bundle root directory (default: current directory).
+Existing documents are indexed by frontmatter at startup:
+
+```bash
+go run . mcp --dir ./knowledge
+```
+
 Enable debug logging with the global `--verbose` / `-v` flag:
 
 ```bash
@@ -28,6 +35,18 @@ go run . -v mcp
 ```
 
 The server shuts down gracefully on `SIGINT` / `SIGTERM`.
+
+## Tools
+
+| Tool     | Description                                                           |
+| -------- | --------------------------------------------------------------------- |
+| `read`   | Read a document                                                       |
+| `write`  | Create or overwrite a document                                        |
+| `edit`   | Replace an exact string in a document (`replace_all` for every match) |
+| `delete` | Delete a document                                                     |
+| `list`   | List documents and subdirectories directly under a directory          |
+| `tree`   | List document paths under a directory recursively (optional `depth`)  |
+| `search` | Find documents whose frontmatter matches every field in `filter`      |
 
 ## Build
 
@@ -44,9 +63,11 @@ mise run build
 │   ├── root.go          # root command and logger setup
 │   └── mcpcmd/
 │       ├── mcp.go       # `mcp` command and HTTP bootstrap
-│       └── server.go    # MCP server construction (register tools here)
+│       ├── server.go    # MCP server construction
+│       └── tools.go     # MCP tool definitions
 ├── internal/
-│   └── storage/         # storage and index interfaces
+│   ├── bundle/          # knowledge bundle: file store and frontmatter catalog
+│   └── okf/             # OKF document and frontmatter parser
 ├── main.go
 ├── go.mod
 └── go.sum

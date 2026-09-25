@@ -38,8 +38,8 @@ type Store interface {
 }
 
 type Entry struct {
-	Path  string
-	IsDir bool
+	Path  string `json:"path"`
+	IsDir bool   `json:"is_dir,omitempty"`
 }
 
 // DirStore is a Store backed by a local directory.

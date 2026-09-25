@@ -12,10 +12,12 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
 var flags struct {
 	addr string
+	dir  string
 }
 
 // Cmd serves the MCP server over Streamable HTTP.
@@ -25,16 +27,27 @@ var Cmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		return serve(ctx, flags.addr)
+		return serve(ctx, flags.addr, flags.dir)
 	},
 }
 
 func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
+	Cmd.Flags().StringVar(&flags.dir, "dir", ".", "Knowledge bundle root directory")
 }
 
-func serve(ctx context.Context, addr string) error {
-	server := newServer()
+func serve(ctx context.Context, addr, dir string) error {
+	store, err := bundle.OpenDir(dir)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	b, err := bundle.OpenBundle(ctx, store, bundle.NewMemCatalog())
+	if err != nil {
+		return err
+	}
+
+	server := newServer(b)
 	handler := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{Logger: slog.Default()},
@@ -47,7 +60,7 @@ func serve(ctx context.Context, addr string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("MCP server listening", "addr", addr, "endpoint", "/mcp")
+		slog.Info("MCP server listening", "addr", addr, "endpoint", "/mcp", "dir", dir)
 		errCh <- srv.ListenAndServe()
 	}()
 
