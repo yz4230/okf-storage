@@ -60,12 +60,14 @@ func TestHandlerAuth(t *testing.T) {
 		{"wrong token in path", "/okf/wrong", "", http.StatusUnauthorized},
 		{"header wins over path", "/okf/secret", "Bearer wrong", http.StatusUnauthorized},
 		{"token only served under path", "/secret", "", http.StatusNotFound},
+		{"cross-origin with token", "/okf/secret", "", http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req, _ := http.NewRequest(http.MethodPost, ts.URL+tt.path, strings.NewReader(initialize))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Accept", "application/json, text/event-stream")
+			req.Header.Set("Origin", "https://chatgpt.com")
 			if tt.authz != "" {
 				req.Header.Set("Authorization", tt.authz)
 			}
@@ -78,5 +80,27 @@ func TestHandlerAuth(t *testing.T) {
 				t.Errorf("status = %d, want %d", resp.StatusCode, tt.want)
 			}
 		})
+	}
+}
+
+func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
+	store, err := bundle.OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenDir() error = %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ts := httptest.NewServer(newHandler(newServer(bundle.NewBundle(store, bundle.NewMemCatalog())), "/mcp", ""))
+	t.Cleanup(ts.Close)
+
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader("{}"))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Origin", "https://evil.example")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
 	}
 }

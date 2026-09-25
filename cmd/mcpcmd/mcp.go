@@ -92,19 +92,53 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 // require "Authorization: Bearer <token>", or, for clients that cannot send
 // headers, the token as a trailing path segment ("<path>/<token>"). A request
 // carrying an Authorization header is judged by the header alone.
+//
+// Without a token, cross-origin browser requests are rejected so web pages
+// cannot drive an unauthenticated local server. With a token that check is
+// redundant, and it would block hosted clients such as ChatGPT that send an
+// Origin header.
 func newHandler(server *mcp.Server, path, token string) http.Handler {
 	var h http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
 		&mcp.StreamableHTTPOptions{Logger: slog.Default()},
 	)
 	mux := http.NewServeMux()
-	if token != "" {
-		h = requireToken(h, token)
-		mux.Handle(strings.TrimSuffix(path, "/")+"/{token}", http.NewCrossOriginProtection().Handler(h))
+	if token == "" {
+		mux.Handle(path, http.NewCrossOriginProtection().Handler(h))
+		return logRequests(mux, "")
 	}
-	mux.Handle(path, http.NewCrossOriginProtection().Handler(h))
-	return mux
+	h = requireToken(h, token)
+	mux.Handle(path, h)
+	mux.Handle(strings.TrimSuffix(path, "/")+"/{token}", h)
+	return logRequests(mux, token)
 }
+
+// logRequests logs each request at debug level, redacting token from the path.
+func logRequests(next http.Handler, token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if token != "" {
+			path = strings.ReplaceAll(path, token, "<token>")
+		}
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		slog.Debug("request", "method", r.Method, "path", path, "status", rec.status,
+			"origin", r.Header.Get("Origin"), "user_agent", r.UserAgent())
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+// Unwrap lets http.ResponseController reach Flush for streaming responses.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func requireToken(next http.Handler, token string) http.Handler {
 	valid := func(got string) bool { return subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1 }
