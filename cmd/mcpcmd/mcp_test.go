@@ -1,6 +1,7 @@
 package mcpcmd
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -102,5 +103,33 @@ func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusForbidden)
+	}
+}
+
+// TestHandlerDiscover replays the server/discover request ChatGPT sends, which
+// fails unless protocol 2026-07-28 is offered.
+func TestHandlerDiscover(t *testing.T) {
+	store, err := bundle.OpenDir(t.TempDir())
+	if err != nil {
+		t.Fatalf("OpenDir() error = %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	ts := httptest.NewServer(newHandler(newServer(bundle.NewBundle(store, bundle.NewMemCatalog())), "/mcp", ""))
+	t.Cleanup(ts.Close)
+
+	const discover = `{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
+	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader(discover))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Protocol-Version", "2026-07-28")
+	req.Header.Set("Mcp-Method", "server/discover")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(string(body), `"2026-07-28"`) {
+		t.Errorf("status = %d, body = %s; want 200 advertising 2026-07-28", resp.StatusCode, body)
 	}
 }

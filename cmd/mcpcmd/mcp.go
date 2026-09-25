@@ -100,7 +100,9 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 func newHandler(server *mcp.Server, path, token string) http.Handler {
 	var h http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
-		&mcp.StreamableHTTPOptions{Logger: slog.Default()},
+		// Stateless is required to negotiate protocol 2026-07-28, which
+		// clients such as ChatGPT use exclusively. No tool relies on a session.
+		&mcp.StreamableHTTPOptions{Stateless: true, Logger: slog.Default()},
 	)
 	mux := http.NewServeMux()
 	if token == "" {
