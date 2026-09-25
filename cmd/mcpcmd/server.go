@@ -23,6 +23,7 @@ func newServer(b *bundle.Bundle) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "okf-storage", Version: version}, &mcp.ServerOptions{
 		Instructions: instructions,
 	})
+	server.AddReceivingMiddleware(withOverview(b))
 	addTools(server, b)
 	addResources(server, b)
 	return server

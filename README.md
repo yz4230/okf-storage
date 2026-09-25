@@ -88,7 +88,10 @@ docker run --rm -p 8080:8080 -v okf-data:/data -e OKF_STORAGE_TOKEN=... okf-stor
 The server also sends instructions on initialization (`cmd/mcpcmd/instructions.md`)
 telling agents to search the bundle before answering and to record durable knowledge
 in it on their own initiative; clients that support MCP server instructions add them
-to the model's context.
+to the model's context. Each initialization appends an overview of the bundle's
+current contents (`cmd/mcpcmd/overview.go`): the document count, the root `index.md`
+(or the top-level entries when there is none) and the `type` and `tags` values in use,
+so agents can search with exact values from the start.
 
 The guide (`cmd/mcpcmd/guide.md`) and the specification (`cmd/mcpcmd/spec.md`) are embedded in the binary.
 The specification is copied unmodified from
@@ -115,6 +118,7 @@ mise run build
 │       ├── resources.go # MCP resource definitions
 │       ├── dump.go      # GET /dump tar.gz download
 │       ├── instructions.md # server instructions sent on initialization
+│       ├── overview.go  # bundle overview appended to the instructions
 │       ├── guide.md     # agent guide served as okf://guide
 │       └── spec.md      # OKF v0.2 specification served as okf://spec
 ├── internal/
