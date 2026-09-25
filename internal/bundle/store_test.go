@@ -1,4 +1,4 @@
-package storage
+package bundle
 
 import (
 	"errors"
@@ -8,12 +8,12 @@ import (
 	"testing"
 )
 
-func TestFSRepository(t *testing.T) {
+func TestDirStore(t *testing.T) {
 	ctx := t.Context()
 	dir := t.TempDir()
-	r, err := OpenFSRepository(dir)
+	r, err := OpenDir(dir)
 	if err != nil {
-		t.Fatalf("OpenFSRepository() error = %v", err)
+		t.Fatalf("OpenDir() error = %v", err)
 	}
 	defer r.Close()
 
@@ -77,10 +77,10 @@ func TestFSRepository(t *testing.T) {
 	}
 }
 
-func TestFSRepositoryRejectsEscapingPaths(t *testing.T) {
-	r, err := OpenFSRepository(t.TempDir())
+func TestDirStoreRejectsEscapingPaths(t *testing.T) {
+	r, err := OpenDir(t.TempDir())
 	if err != nil {
-		t.Fatalf("OpenFSRepository() error = %v", err)
+		t.Fatalf("OpenDir() error = %v", err)
 	}
 	defer r.Close()
 	for _, name := range []string{"../x.md", "/etc/passwd", "a/../../x.md", "."} {
@@ -90,11 +90,11 @@ func TestFSRepositoryRejectsEscapingPaths(t *testing.T) {
 	}
 }
 
-func TestFSRepositoryEdit(t *testing.T) {
+func TestDirStoreEdit(t *testing.T) {
 	ctx := t.Context()
-	r, err := OpenFSRepository(t.TempDir())
+	r, err := OpenDir(t.TempDir())
 	if err != nil {
-		t.Fatalf("OpenFSRepository() error = %v", err)
+		t.Fatalf("OpenDir() error = %v", err)
 	}
 	defer r.Close()
 	const orig = "---\ntype: Metric\n---\nfoo bar foo\n"

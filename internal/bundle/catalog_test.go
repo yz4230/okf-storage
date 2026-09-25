@@ -1,4 +1,4 @@
-package storage
+package bundle
 
 import (
 	"slices"
@@ -16,9 +16,9 @@ func mustFrontmatter(t *testing.T, yaml string) *okf.Frontmatter {
 	return doc.Frontmatter
 }
 
-func TestMemoryIndexSearch(t *testing.T) {
+func TestMemCatalogSearch(t *testing.T) {
 	ctx := t.Context()
-	x := NewMemoryIndex()
+	x := NewMemCatalog()
 	x.Put(ctx, "b.md", mustFrontmatter(t, "type: Metric\ntags: [finance, kpi]\nversion: 2"))
 	x.Put(ctx, "a.md", mustFrontmatter(t, "type: Metric\ntags: [finance]"))
 	x.Put(ctx, "c.md", mustFrontmatter(t, "type: Playbook"))

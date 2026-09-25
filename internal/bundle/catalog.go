@@ -1,4 +1,4 @@
-package storage
+package bundle
 
 import (
 	"context"
@@ -9,44 +9,45 @@ import (
 	"github.com/yz4230/okf-storage/internal/okf"
 )
 
-// DocumentIndex indexes document frontmatter by document path for search.
-type DocumentIndex interface {
-	Put(ctx context.Context, name string, fm *okf.Frontmatter) error
-	Delete(ctx context.Context, name string) error
+// Catalog records concept frontmatter by path so concepts can be searched
+// by metadata.
+type Catalog interface {
+	Put(ctx context.Context, path string, fm *okf.Frontmatter) error
+	Delete(ctx context.Context, path string) error
 	// Search returns the sorted paths of documents whose frontmatter matches
 	// every key in filter. A field matches if it equals the value, or if it is
 	// a list containing the value. An empty filter matches every document.
 	Search(ctx context.Context, filter map[string]any) ([]string, error)
 }
 
-// MemoryIndex is an in-memory DocumentIndex. It keeps a reference to each
+// MemCatalog is an in-memory Catalog. It keeps a reference to each
 // frontmatter, so callers must not mutate one after putting it.
-type MemoryIndex struct {
+type MemCatalog struct {
 	mu   sync.RWMutex
 	docs map[string]*okf.Frontmatter
 }
 
-var _ DocumentIndex = (*MemoryIndex)(nil)
+var _ Catalog = (*MemCatalog)(nil)
 
-func NewMemoryIndex() *MemoryIndex {
-	return &MemoryIndex{docs: make(map[string]*okf.Frontmatter)}
+func NewMemCatalog() *MemCatalog {
+	return &MemCatalog{docs: make(map[string]*okf.Frontmatter)}
 }
 
-func (x *MemoryIndex) Put(_ context.Context, name string, fm *okf.Frontmatter) error {
+func (x *MemCatalog) Put(_ context.Context, path string, fm *okf.Frontmatter) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	x.docs[name] = fm
+	x.docs[path] = fm
 	return nil
 }
 
-func (x *MemoryIndex) Delete(_ context.Context, name string) error {
+func (x *MemCatalog) Delete(_ context.Context, path string) error {
 	x.mu.Lock()
 	defer x.mu.Unlock()
-	delete(x.docs, name)
+	delete(x.docs, path)
 	return nil
 }
 
-func (x *MemoryIndex) Search(_ context.Context, filter map[string]any) ([]string, error) {
+func (x *MemCatalog) Search(_ context.Context, filter map[string]any) ([]string, error) {
 	x.mu.RLock()
 	defer x.mu.RUnlock()
 	var names []string
