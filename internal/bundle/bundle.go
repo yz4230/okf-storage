@@ -80,19 +80,14 @@ func (b *bundle) Write(ctx context.Context, path string, content string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if _, err := b.store.Write(ctx, path, content, ""); err != nil {
-		return err
-	}
 	doc, err := okf.ParseDocument(content)
 	if err != nil {
 		return err
 	}
-	if doc.Frontmatter != nil {
-		if err := b.catalog.Put(ctx, path, doc.Frontmatter); err != nil {
-			return err
-		}
+	if _, err := b.store.Write(ctx, path, content, ""); err != nil {
+		return err
 	}
-	return nil
+	return b.index(ctx, path, doc)
 }
 
 func (b *bundle) Edit(ctx context.Context, path, oldString, newString string, replaceAll bool) error {
@@ -106,7 +101,7 @@ func (b *bundle) Edit(ctx context.Context, path, oldString, newString string, re
 		return errors.New("old string and new string must differ")
 	}
 
-	var latest string
+	var doc *okf.Document
 	for attempt := 1; ; attempt++ {
 		content, ver, err := b.store.Read(ctx, path)
 		if err != nil {
@@ -118,7 +113,10 @@ func (b *bundle) Edit(ctx context.Context, path, oldString, newString string, re
 		case n > 1 && !replaceAll:
 			return fmt.Errorf("%w: %d occurrences in %s", ErrAmbiguousMatch, n, path)
 		}
-		latest = strings.ReplaceAll(content, oldString, newString)
+		latest := strings.ReplaceAll(content, oldString, newString)
+		if doc, err = okf.ParseDocument(latest); err != nil {
+			return err
+		}
 		_, err = b.store.Write(ctx, path, latest, ver)
 		if err == nil {
 			break
@@ -130,21 +128,16 @@ func (b *bundle) Edit(ctx context.Context, path, oldString, newString string, re
 		}
 	}
 
-	doc, err := okf.ParseDocument(latest)
-	if err != nil {
-		return err
-	}
-	if doc.Frontmatter != nil {
-		if err := b.catalog.Put(ctx, path, doc.Frontmatter); err != nil {
-			return err
-		}
-	} else {
-		if err := b.catalog.Delete(ctx, path); err != nil {
-			return err
-		}
-	}
+	return b.index(ctx, path, doc)
+}
 
-	return nil
+// index makes the catalog entry for path reflect doc, dropping it when doc no
+// longer has frontmatter.
+func (b *bundle) index(ctx context.Context, path string, doc *okf.Document) error {
+	if doc.Frontmatter == nil {
+		return b.catalog.Delete(ctx, path)
+	}
+	return b.catalog.Put(ctx, path, doc.Frontmatter)
 }
 
 func (b *bundle) Delete(ctx context.Context, path string) error {

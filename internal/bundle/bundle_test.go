@@ -138,3 +138,39 @@ func TestReindex(t *testing.T) {
 		t.Errorf("Search() after Reindex = %v, want [metrics/revenue.md]", got)
 	}
 }
+
+func TestBundleWriteDropsRemovedFrontmatter(t *testing.T) {
+	ctx := t.Context()
+	b, _, _ := newTestBundle(t)
+	if err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if err := b.Write(ctx, "a.md", "# plain\n"); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got, _ := b.Search(ctx, nil); got != nil {
+		t.Errorf("Search() = %v, want none", got)
+	}
+}
+
+func TestBundleRejectsInvalidFrontmatterWithoutWriting(t *testing.T) {
+	ctx := t.Context()
+	b, _, _ := newTestBundle(t)
+	const orig = "---\ntype: Metric\n---\n"
+	if err := b.Write(ctx, "a.md", orig); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	if err := b.Write(ctx, "a.md", "---\ntype: [\n---\n"); err == nil {
+		t.Errorf("Write(invalid) error = nil")
+	}
+	if err := b.Edit(ctx, "a.md", "Metric", "[", false); err == nil {
+		t.Errorf("Edit(invalid) error = nil")
+	}
+	if got, _ := b.Read(ctx, "a.md"); got != orig {
+		t.Errorf("content = %q, want unchanged %q", got, orig)
+	}
+	if got, _ := b.Search(ctx, map[string]any{"type": "Metric"}); !slices.Equal(got, []string{"a.md"}) {
+		t.Errorf("Search() = %v, want [a.md]", got)
+	}
+}
