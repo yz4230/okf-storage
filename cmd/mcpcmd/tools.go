@@ -77,7 +77,7 @@ type listOutput struct {
 func addTools(s *mcp.Server, b *bundle.Bundle) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "read",
-		Description: "Read a document from the knowledge bundle.",
+		Description: "Read a document from the knowledge bundle. Check relevant documents before answering or starting a task.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in pathInput) (*mcp.CallToolResult, any, error) {
 		content, err := b.Read(ctx, in.Path)
@@ -89,7 +89,7 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "write",
-		Description: "Create or overwrite a document in the knowledge bundle.",
+		Description: "Create or overwrite a document in the knowledge bundle. Use it on your own initiative to record durable knowledge learned in the conversation (decisions, definitions, procedures, facts about systems); read okf://guide before your first change.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in writeInput) (*mcp.CallToolResult, any, error) {
 		if err := b.Write(ctx, in.Path, in.Content); err != nil {
@@ -100,7 +100,7 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "edit",
-		Description: "Replace an exact string in a document. old_string must occur exactly once unless replace_all is set.",
+		Description: "Replace an exact string in a document. old_string must occur exactly once unless replace_all is set. Use it on your own initiative to extend or correct existing knowledge instead of creating duplicates.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in editInput) (*mcp.CallToolResult, any, error) {
 		if err := b.Edit(ctx, in.Path, in.OldString, in.NewString, in.ReplaceAll); err != nil {
 			return nil, nil, err
@@ -143,7 +143,7 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search",
-		Description: "Find documents whose frontmatter matches every field in filter. Results are paged; if next is returned, call again with it as after.",
+		Description: "Find documents whose frontmatter matches every field in filter. Use it to find existing knowledge before answering, and before writing to avoid duplicates. Results are paged; if next is returned, call again with it as after.",
 		InputSchema: inputSchema[searchInput](),
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, pathsOutput, error) {
