@@ -29,6 +29,9 @@ type Version string
 // path relative to the bundle root, e.g. "metrics/revenue.md".
 type Store interface {
 	Read(ctx context.Context, path string) (string, Version, error)
+	// Stat returns the current version of path without its content, like an
+	// HTTP HEAD.
+	Stat(ctx context.Context, path string) (Version, error)
 	// Write stores content at path and returns its new version. If ifMatch is
 	// non-empty, the write only succeeds when the stored document still has
 	// that version; otherwise it fails with ErrConflict.
@@ -82,6 +85,11 @@ func (r *DirStore) Read(_ context.Context, path string) (string, Version, error)
 		return "", "", notFound(path, err)
 	}
 	return string(data), versionOf(data), nil
+}
+
+func (r *DirStore) Stat(ctx context.Context, path string) (Version, error) {
+	_, ver, err := r.Read(ctx, path)
+	return ver, err
 }
 
 func (r *DirStore) Write(_ context.Context, path string, content string, ifMatch Version) (Version, error) {

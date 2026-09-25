@@ -3,7 +3,9 @@ package bundle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
+	"sync"
 	"testing"
 )
 
@@ -172,5 +174,95 @@ func TestBundleRejectsInvalidFrontmatterWithoutWriting(t *testing.T) {
 	}
 	if got, _ := b.Search(ctx, map[string]any{"type": "Metric"}); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("Search() = %v, want [a.md]", got)
+	}
+}
+
+// interleavingStore runs between once, just before the first Stat, to
+// simulate another process changing the store after this writer's store
+// update but before its catalog update is verified. Such a process would put
+// its own catalog entry, which the writer then overwrites with a stale one.
+type interleavingStore struct {
+	*DirStore
+	between func()
+}
+
+func (s *interleavingStore) Stat(ctx context.Context, path string) (Version, error) {
+	if f := s.between; f != nil {
+		s.between = nil
+		f()
+	}
+	return s.DirStore.Stat(ctx, path)
+}
+
+func TestBundleCatalogFollowsInterleavedWriter(t *testing.T) {
+	ctx := t.Context()
+	_, dir, _ := newTestBundle(t)
+	catalog := NewMemCatalog()
+	store := &interleavingStore{DirStore: dir}
+	b := NewBundle(store, catalog)
+
+	theirs := func(content string) func() {
+		return func() {
+			if _, err := dir.Write(ctx, "a.md", content, ""); err != nil {
+				t.Fatalf("Write() error = %v", err)
+			}
+		}
+	}
+
+	store.between = theirs("---\ntype: Theirs\n---\n")
+	if err := b.Write(ctx, "a.md", "---\ntype: Mine\n---\n"); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+	if got, _ := b.Search(ctx, map[string]any{"type": "Theirs"}); !slices.Equal(got, []string{"a.md"}) {
+		t.Errorf("Search(Theirs) after Write = %v, want [a.md]", got)
+	}
+
+	store.between = theirs("---\ntype: Recreated\n---\n")
+	if err := b.Delete(ctx, "a.md"); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if got, _ := b.Search(ctx, map[string]any{"type": "Recreated"}); !slices.Equal(got, []string{"a.md"}) {
+		t.Errorf("Search(Recreated) after Delete = %v, want [a.md]", got)
+	}
+}
+
+func TestBundleConcurrentWritesLeaveCatalogConsistent(t *testing.T) {
+	ctx := t.Context()
+	b, store, catalog := newTestBundle(t)
+
+	var wg sync.WaitGroup
+	for i := range 20 {
+		wg.Go(func() {
+			content := fmt.Sprintf("---\ntype: T%d\n---\n", i)
+			if err := b.Write(ctx, "a.md", content); err != nil {
+				t.Errorf("Write() error = %v", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	doc, _, err := load(ctx, store, "a.md")
+	if err != nil {
+		t.Fatalf("load() error = %v", err)
+	}
+	want, _ := doc.Frontmatter.Get("type")
+	if got, _ := catalog.Search(ctx, map[string]any{"type": want}); !slices.Equal(got, []string{"a.md"}) {
+		t.Errorf("Search(%v) = %v, want [a.md]", want, got)
+	}
+	if got, _ := catalog.Search(ctx, nil); len(got) != 1 {
+		t.Errorf("catalog has %d entries, want 1", len(got))
+	}
+}
+
+func TestReindexDropsOrphans(t *testing.T) {
+	ctx := t.Context()
+	_, store, catalog := newTestBundle(t)
+	catalog.Put(ctx, "gone.md", mustFrontmatter(t, "type: Metric"))
+
+	if err := Reindex(ctx, store, catalog); err != nil {
+		t.Fatalf("Reindex() error = %v", err)
+	}
+	if got, _ := catalog.Search(ctx, nil); got != nil {
+		t.Errorf("Search() after Reindex = %v, want none", got)
 	}
 }
