@@ -301,6 +301,39 @@ func TestEachPage(t *testing.T) {
 	}
 }
 
+func TestBundleDeleteDir(t *testing.T) {
+	ctx := t.Context()
+	b, store, _ := newTestBundle(t)
+	// More than one page, so that the listing continues after the last
+	// document of a subdirectory, and the subdirectory itself, are gone.
+	var want []string
+	for i := range listPageSize + 1 {
+		p := fmt.Sprintf("drafts/%d/a.md", i)
+		want = append(want, p)
+		if err := b.Write(ctx, p, "---\ntype: Draft\n---\n"); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+	}
+	slices.Sort(want)
+	if err := b.Write(ctx, "drafts-kept.md", "---\ntype: Draft\n---\n"); err != nil {
+		t.Fatalf("Write() error = %v", err)
+	}
+
+	if _, err := b.DeleteDir(ctx, "."); err == nil {
+		t.Errorf("DeleteDir(.) succeeded, want an error")
+	}
+	deleted, err := b.DeleteDir(ctx, "drafts")
+	if err != nil || !slices.Equal(deleted, want) {
+		t.Fatalf("DeleteDir() = %d paths, %v, want %d", len(deleted), err, len(want))
+	}
+	if got := paths(b.Search(ctx, nil, PageRequest{})); !slices.Equal(got, []string{"drafts-kept.md"}) {
+		t.Errorf("Search() after DeleteDir = %v, want [drafts-kept.md]", got)
+	}
+	if entries, _ := store.List(ctx, "."); !slices.Equal(entries, []Entry{{"drafts-kept.md", false}}) {
+		t.Errorf("List(.) after DeleteDir = %v, want the emptied directory gone", entries)
+	}
+}
+
 func TestBundleMove(t *testing.T) {
 	ctx := t.Context()
 	b, _, _ := newTestBundle(t)

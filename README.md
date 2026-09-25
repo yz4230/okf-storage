@@ -62,7 +62,7 @@ docker run --rm -p 8080:8080 -v okf-data:/data -e OKF_STORAGE_TOKEN=... okf-stor
 | `read`   | Read a document                                                       |
 | `write`  | Create or overwrite a document                                        |
 | `edit`   | Replace an exact string in a document (`replace_all` for every match) |
-| `delete` | Delete a document                                                     |
+| `delete` | Delete a document, or every document under a directory (`dir`)       |
 | `move`   | Move or rename a document; fails if the new path already exists       |
 | `list`   | List documents and subdirectories directly under a directory          |
 | `tree`   | List document paths under a directory recursively (optional `depth`)  |

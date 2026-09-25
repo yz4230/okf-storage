@@ -104,6 +104,34 @@ func TestSearchRejectsInvalidFilter(t *testing.T) {
 	}
 }
 
+func TestDeleteDir(t *testing.T) {
+	cs, b := connect(t)
+	for _, p := range []string{"drafts/a.md", "drafts/sub/b.md", "kept.md"} {
+		if err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
+			t.Fatalf("Write() error = %v", err)
+		}
+	}
+	del := func(args map[string]any) *mcp.CallToolResult {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "delete", Arguments: args})
+		if err != nil {
+			t.Fatalf("CallTool(delete, %v) error = %v", args, err)
+		}
+		return res
+	}
+
+	for _, args := range []map[string]any{{}, {"path": "kept.md", "dir": "drafts"}} {
+		if res := del(args); !res.IsError {
+			t.Errorf("delete(%v) succeeded, want an error", args)
+		}
+	}
+	if res := del(map[string]any{"dir": "drafts"}); res.IsError {
+		t.Fatalf("delete(dir) failed: %v", res.Content)
+	}
+	if got := callPaths(t, cs, "tree", nil); !slices.Equal(got.Paths, []string{"kept.md"}) {
+		t.Errorf("tree after delete(dir) = %v, want [kept.md]", got.Paths)
+	}
+}
+
 func TestMove(t *testing.T) {
 	cs, b := connect(t)
 	for _, p := range []string{"a.md", "b.md"} {

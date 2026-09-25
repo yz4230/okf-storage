@@ -2,7 +2,9 @@ package mcpcmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,6 +25,11 @@ type editInput struct {
 	OldString  string `json:"old_string" jsonschema:"exact text to replace; must occur exactly once unless replace_all is set"`
 	NewString  string `json:"new_string" jsonschema:"text to replace old_string with"`
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"replace every occurrence of old_string"`
+}
+
+type deleteInput struct {
+	Path string `json:"path,omitempty" jsonschema:"path of the document to delete"`
+	Dir  string `json:"dir,omitempty" jsonschema:"instead of path, a directory whose documents to delete recursively, e.g. drafts/old"`
 }
 
 type moveInput struct {
@@ -115,13 +122,23 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delete",
-		Description: "Delete a document from the knowledge bundle.",
+		Description: "Delete a document from the knowledge bundle, or with dir instead of path, every document under a directory recursively.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in pathInput) (*mcp.CallToolResult, any, error) {
-		if err := b.Delete(ctx, in.Path); err != nil {
-			return nil, nil, err
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteInput) (*mcp.CallToolResult, any, error) {
+		switch {
+		case (in.Path == "") == (in.Dir == ""):
+			return nil, nil, errors.New("set exactly one of path and dir")
+		case in.Path != "":
+			if err := b.Delete(ctx, in.Path); err != nil {
+				return nil, nil, err
+			}
+			return textResult(fmt.Sprintf("deleted %s", in.Path)), nil, nil
 		}
-		return textResult(fmt.Sprintf("deleted %s", in.Path)), nil, nil
+		deleted, err := b.DeleteDir(ctx, in.Dir)
+		if err != nil {
+			return nil, nil, fmt.Errorf("deleted %d documents, then: %w", len(deleted), err)
+		}
+		return textResult(fmt.Sprintf("deleted %d documents:\n%s", len(deleted), strings.Join(deleted, "\n"))), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

@@ -38,6 +38,8 @@ type Store interface {
 	// non-empty, the write only succeeds when the stored document still has
 	// that version; otherwise it fails with ErrConflict.
 	Write(ctx context.Context, path string, content string, ifMatch Version) (Version, error)
+	// Delete removes the document at path. A directory left empty goes with
+	// it, as in an object store where directories are only key prefixes.
 	Delete(ctx context.Context, path string) error
 	// Move renames the document at from to to, keeping its content. It fails
 	// with ErrExists rather than overwrite a document already at to.
@@ -129,7 +131,21 @@ func (r *DirStore) Delete(_ context.Context, path string) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return notFound(path, r.root.Remove(path))
+	if err := r.root.Remove(path); err != nil {
+		return notFound(path, err)
+	}
+	r.removeEmptyParents(path)
+	return nil
+}
+
+// removeEmptyParents removes the directories above path that are now empty,
+// stopping at the first that is not.
+func (r *DirStore) removeEmptyParents(p string) {
+	for dir := path.Dir(p); dir != "."; dir = path.Dir(dir) {
+		if r.root.Remove(dir) != nil {
+			return
+		}
+	}
 }
 
 func (r *DirStore) Move(_ context.Context, from, to string) error {
@@ -152,7 +168,11 @@ func (r *DirStore) Move(_ context.Context, from, to string) error {
 		}
 		return notFound(from, err)
 	}
-	return r.root.Remove(from)
+	if err := r.root.Remove(from); err != nil {
+		return err
+	}
+	r.removeEmptyParents(from)
+	return nil
 }
 
 func (r *DirStore) List(_ context.Context, dir string) ([]Entry, error) {

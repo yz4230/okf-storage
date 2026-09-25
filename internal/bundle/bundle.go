@@ -59,12 +59,12 @@ func Reindex(ctx context.Context, store Store, catalog Catalog) error {
 	})
 }
 
-// reindexPageSize is how many paths Reindex fetches at a time.
-const reindexPageSize = 1000
+// listPageSize is how many paths eachPage fetches at a time.
+const listPageSize = 1000
 
 // eachPage calls f for every path of every page that fetch returns.
 func eachPage(fetch func(PageRequest) (Page, error), f func(path string) error) error {
-	req := PageRequest{Limit: reindexPageSize}
+	req := PageRequest{Limit: listPageSize}
 	for {
 		page, err := fetch(req)
 		if err != nil {
@@ -152,6 +152,31 @@ func (b *Bundle) Delete(ctx context.Context, path string) error {
 		return err
 	}
 	return syncEntry(ctx, b.store, b.catalog, path, nil, "")
+}
+
+// DeleteDir deletes every document under dir, recursively, and returns their
+// paths. On failure it returns the paths deleted so far with the error.
+func (b *Bundle) DeleteDir(ctx context.Context, dir string) ([]string, error) {
+	if dir == "." {
+		return nil, errors.New("refusing to delete the bundle root")
+	}
+	var deleted []string
+	err := eachPage(func(req PageRequest) (Page, error) {
+		page, err := b.store.Tree(ctx, dir, -1, req)
+		// Deleting the last document of dir removes dir itself.
+		if req.After != "" && errors.Is(err, ErrNotFound) {
+			return Page{}, nil
+		}
+		return page, err
+	}, func(path string) error {
+		// Another writer may have deleted it since the listing.
+		if err := b.Delete(ctx, path); err != nil && !errors.Is(err, ErrNotFound) {
+			return err
+		}
+		deleted = append(deleted, path)
+		return nil
+	})
+	return deleted, err
 }
 
 // Move renames the document at from to to. It fails with ErrExists if a
