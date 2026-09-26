@@ -91,17 +91,25 @@ func (b *Bundle) Search(ctx context.Context, filter map[string]any, page PageReq
 	return b.catalog.Search(ctx, filter, page)
 }
 
-func (b *Bundle) Write(ctx context.Context, path string, content string) error {
+// Write creates the document at path or replaces it whole with content, like
+// Claude Code's Write tool; it never appends or merges. It reports whether
+// the document was created rather than overwritten.
+func (b *Bundle) Write(ctx context.Context, path string, content string) (created bool, err error) {
 	doc, err := okf.ParseDocument(content)
 	if err != nil {
-		return err
+		return false, err
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.store.Write(ctx, path, content); err != nil {
-		return err
+	_, err = b.store.Read(ctx, path)
+	created = errors.Is(err, ErrNotFound)
+	if err != nil && !created {
+		return false, err
 	}
-	return index(ctx, b.catalog, path, doc)
+	if err := b.store.Write(ctx, path, content); err != nil {
+		return false, err
+	}
+	return created, index(ctx, b.catalog, path, doc)
 }
 
 // Edit replaces oldString with newString by exact match, like Claude Code's

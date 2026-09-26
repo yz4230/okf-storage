@@ -148,7 +148,7 @@ func TestHandlerDump(t *testing.T) {
 		"metrics/revenue.md": "---\ntype: metric\n---\nRevenue.\n",
 	}
 	for p, content := range want {
-		if err := b.Write(t.Context(), p, content); err != nil {
+		if _, err := b.Write(t.Context(), p, content); err != nil {
 			t.Fatalf("Write(%q) error = %v", p, err)
 		}
 	}

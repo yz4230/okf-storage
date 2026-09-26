@@ -74,7 +74,7 @@ rolling update would start the new pod while the old one still holds the lock.
 | Tool     | Description                                                           |
 | -------- | --------------------------------------------------------------------- |
 | `read`   | Read a document                                                       |
-| `write`  | Create or overwrite a document                                        |
+| `write`  | Create a document, or overwrite one whole (no append or merge)        |
 | `edit`   | Replace an exact string in a document (`replace_all` for every match) |
 | `delete` | Delete a document, or every document under a directory (`dir`)       |
 | `move`   | Move or rename a document; fails if the new path already exists       |

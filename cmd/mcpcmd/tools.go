@@ -101,13 +101,17 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "write",
-		Description: "Create or overwrite a document in the knowledge bundle. Use it on your own initiative to record durable knowledge learned in the conversation (decisions, definitions, procedures, facts about systems); read okf://guide before your first change.",
+		Description: "Create a document in the knowledge bundle, or overwrite an existing one with the full content given; it never appends or merges. Before overwriting, read the document and carry over everything you want to keep; for partial changes use edit instead. Use it on your own initiative to record durable knowledge learned in the conversation (decisions, definitions, procedures, facts about systems); read okf://guide before your first change.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in writeInput) (*mcp.CallToolResult, any, error) {
-		if err := b.Write(ctx, in.Path, in.Content); err != nil {
+		created, err := b.Write(ctx, in.Path, in.Content)
+		if err != nil {
 			return nil, nil, err
 		}
-		return textResult(fmt.Sprintf("wrote %s", in.Path)), nil, nil
+		if created {
+			return textResult(fmt.Sprintf("created %s", in.Path)), nil, nil
+		}
+		return textResult(fmt.Sprintf("overwrote %s", in.Path)), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{

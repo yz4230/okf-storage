@@ -9,7 +9,7 @@ import (
 func TestResources(t *testing.T) {
 	cs, b := connect(t)
 	const content = "---\ntype: Metric\n---\n# Revenue\n"
-	if err := b.Write(t.Context(), "metrics/revenue.md", content); err != nil {
+	if _, err := b.Write(t.Context(), "metrics/revenue.md", content); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 

@@ -33,7 +33,7 @@ func TestInstructionsOverview(t *testing.T) {
 		"notes/log.md": "# Update Log\n",
 	}
 	for path, content := range docs {
-		if err := b.Write(t.Context(), path, content); err != nil {
+		if _, err := b.Write(t.Context(), path, content); err != nil {
 			t.Fatalf("Write(%s) error = %v", path, err)
 		}
 	}
@@ -65,7 +65,7 @@ func TestInstructionsOverview(t *testing.T) {
 		}
 	}
 
-	if err := b.Write(t.Context(), "index.md", "---\nokf_version: \"0.2\"\n---\n# Metrics\n\n* [A](a.md) - The A metric.\n"); err != nil {
+	if _, err := b.Write(t.Context(), "index.md", "---\nokf_version: \"0.2\"\n---\n# Metrics\n\n* [A](a.md) - The A metric.\n"); err != nil {
 		t.Fatalf("Write(index.md) error = %v", err)
 	}
 	got = connectClient()

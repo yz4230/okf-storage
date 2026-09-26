@@ -170,8 +170,9 @@ Conventional leading words are `**Creation**`, `**Update**`,
 
 ## Tool notes
 
-- `write` replaces the whole document, frontmatter included. Read it first and
-  carry over everything you want to keep.
+- `write` creates a document or replaces the whole existing one, frontmatter
+  included; it never appends or merges. Read it first and carry over
+  everything you want to keep.
 - `edit` replaces an exact string; prefer it for small changes to large
   documents.
 - `search` sees only documents with frontmatter and matches values exactly:

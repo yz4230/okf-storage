@@ -54,7 +54,7 @@ func callPaths(t *testing.T, cs *mcp.ClientSession, tool string, args map[string
 func TestPagedTools(t *testing.T) {
 	cs, b := connect(t)
 	for i := range 3 {
-		if err := b.Write(t.Context(), fmt.Sprintf("d%d.md", i), "---\ntype: Metric\n---\n"); err != nil {
+		if _, err := b.Write(t.Context(), fmt.Sprintf("d%d.md", i), "---\ntype: Metric\n---\n"); err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
 	}
@@ -104,10 +104,29 @@ func TestSearchRejectsInvalidFilter(t *testing.T) {
 	}
 }
 
+func TestWrite(t *testing.T) {
+	cs, b := connect(t)
+	for _, tc := range []struct{ content, want string }{
+		{"---\ntype: Metric\n---\nfirst\n", "created a.md"},
+		{"---\ntype: Metric\n---\nsecond\n", "overwrote a.md"},
+	} {
+		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "write", Arguments: map[string]any{"path": "a.md", "content": tc.content}})
+		if err != nil || res.IsError {
+			t.Fatalf("write failed: %v %v", err, res)
+		}
+		if got := res.Content[0].(*mcp.TextContent).Text; got != tc.want {
+			t.Errorf("write result = %q, want %q", got, tc.want)
+		}
+		if got, _ := b.Read(t.Context(), "a.md"); got != tc.content {
+			t.Errorf("content after write = %q, want %q", got, tc.content)
+		}
+	}
+}
+
 func TestDeleteDir(t *testing.T) {
 	cs, b := connect(t)
 	for _, p := range []string{"drafts/a.md", "drafts/sub/b.md", "kept.md"} {
-		if err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
+		if _, err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
 	}
@@ -135,7 +154,7 @@ func TestDeleteDir(t *testing.T) {
 func TestMove(t *testing.T) {
 	cs, b := connect(t)
 	for _, p := range []string{"a.md", "b.md"} {
-		if err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
+		if _, err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
 	}

@@ -57,7 +57,7 @@ func TestBundleEdit(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := b.Write(ctx, "a.md", orig); err != nil {
+			if _, err := b.Write(ctx, "a.md", orig); err != nil {
 				t.Fatalf("Write() error = %v", err)
 			}
 			err := b.Edit(ctx, "a.md", tt.old, tt.new, tt.replaceAll)
@@ -83,7 +83,7 @@ func TestBundleEdit(t *testing.T) {
 func TestBundleEditUpdatesCatalog(t *testing.T) {
 	ctx := t.Context()
 	b, _, _ := newTestBundle(t)
-	if err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
+	if _, err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 	if err := b.Edit(ctx, "a.md", "Metric", "Playbook", false); err != nil {
@@ -121,10 +121,10 @@ func TestReindex(t *testing.T) {
 func TestBundleWriteDropsRemovedFrontmatter(t *testing.T) {
 	ctx := t.Context()
 	b, _, _ := newTestBundle(t)
-	if err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
+	if _, err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	if err := b.Write(ctx, "a.md", "# plain\n"); err != nil {
+	if _, err := b.Write(ctx, "a.md", "# plain\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 	if got := paths(b.Search(ctx, nil, PageRequest{})); got != nil {
@@ -136,11 +136,11 @@ func TestBundleRejectsInvalidFrontmatterWithoutWriting(t *testing.T) {
 	ctx := t.Context()
 	b, _, _ := newTestBundle(t)
 	const orig = "---\ntype: Metric\n---\n"
-	if err := b.Write(ctx, "a.md", orig); err != nil {
+	if _, err := b.Write(ctx, "a.md", orig); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
-	if err := b.Write(ctx, "a.md", "---\ntype: [\n---\n"); err == nil {
+	if _, err := b.Write(ctx, "a.md", "---\ntype: [\n---\n"); err == nil {
 		t.Errorf("Write(invalid) error = nil")
 	}
 	if err := b.Edit(ctx, "a.md", "Metric", "[", false); err == nil {
@@ -162,7 +162,7 @@ func TestBundleConcurrentWritesLeaveCatalogConsistent(t *testing.T) {
 	for i := range 20 {
 		wg.Go(func() {
 			content := fmt.Sprintf("---\ntype: T%d\n---\n", i)
-			if err := b.Write(ctx, "a.md", content); err != nil {
+			if _, err := b.Write(ctx, "a.md", content); err != nil {
 				t.Errorf("Write() error = %v", err)
 			}
 		})
@@ -190,7 +190,7 @@ func TestBundleConcurrentEditsKeepEveryChange(t *testing.T) {
 	for i := range n {
 		fmt.Fprintf(&content, "- item %d: todo\n", i)
 	}
-	if err := b.Write(ctx, "a.md", content.String()); err != nil {
+	if _, err := b.Write(ctx, "a.md", content.String()); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
@@ -250,12 +250,12 @@ func TestBundleDeleteDir(t *testing.T) {
 	for i := range listPageSize + 1 {
 		p := fmt.Sprintf("drafts/%d/a.md", i)
 		want = append(want, p)
-		if err := b.Write(ctx, p, "---\ntype: Draft\n---\n"); err != nil {
+		if _, err := b.Write(ctx, p, "---\ntype: Draft\n---\n"); err != nil {
 			t.Fatalf("Write() error = %v", err)
 		}
 	}
 	slices.Sort(want)
-	if err := b.Write(ctx, "drafts-kept.md", "---\ntype: Draft\n---\n"); err != nil {
+	if _, err := b.Write(ctx, "drafts-kept.md", "---\ntype: Draft\n---\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 
@@ -277,7 +277,7 @@ func TestBundleDeleteDir(t *testing.T) {
 func TestBundleMove(t *testing.T) {
 	ctx := t.Context()
 	b, _, _ := newTestBundle(t)
-	if err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
+	if _, err := b.Write(ctx, "a.md", "---\ntype: Metric\n---\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 	if err := b.Move(ctx, "a.md", "metrics/a.md"); err != nil {
