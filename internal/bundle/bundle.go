@@ -9,24 +9,21 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/yz4230/okf-storage/internal/okf"
 )
 
-// maxEditAttempts bounds how often Edit retries after a concurrent write.
-const maxEditAttempts = 3
-
-// Bundle keeps the catalog derived from the store without holding a lock, so
-// that several processes may share one store and catalog. The store is the
-// source of truth; after changing it, a writer syncs the catalog entry and
-// then checks the store is unchanged, re-deriving the entry if it is not.
-// Whichever writer puts last therefore puts what the store holds. An entry can
-// only go stale if a process dies between the two steps, which Reindex
-// repairs.
+// Bundle keeps the catalog derived from the store. It assumes it is the only
+// writer to both, as when one process serves a DirStore with a MemCatalog
+// (OpenDir enforces this), so a mutex held across each store change and the
+// catalog update that follows keeps them in step. Readers take no lock and
+// may briefly see the store ahead of the catalog.
 type Bundle struct {
 	store   Store
 	catalog Catalog
+	mu      sync.Mutex
 }
 
 func NewBundle(store Store, catalog Catalog) *Bundle {
@@ -44,11 +41,11 @@ func Reindex(ctx context.Context, store Store, catalog Catalog) error {
 		return store.Tree(ctx, ".", -1, req)
 	}, func(path string) error {
 		seen[path] = true
-		doc, ver, err := load(ctx, store, path)
+		doc, err := load(ctx, store, path)
 		if err != nil {
 			return err
 		}
-		return syncEntry(ctx, store, catalog, path, doc, ver)
+		return index(ctx, catalog, path, doc)
 	})
 	if err != nil {
 		return err
@@ -59,7 +56,7 @@ func Reindex(ctx context.Context, store Store, catalog Catalog) error {
 		if seen[path] {
 			return nil
 		}
-		return syncEntry(ctx, store, catalog, path, nil, "")
+		return catalog.Delete(ctx, path)
 	})
 }
 
@@ -87,8 +84,7 @@ func eachPage(fetch func(PageRequest) (Page, error), f func(path string) error) 
 }
 
 func (b *Bundle) Read(ctx context.Context, path string) (string, error) {
-	content, _, err := b.store.Read(ctx, path)
-	return content, err
+	return b.store.Read(ctx, path)
 }
 
 func (b *Bundle) Search(ctx context.Context, filter map[string]any, page PageRequest) (Page, error) {
@@ -100,11 +96,12 @@ func (b *Bundle) Write(ctx context.Context, path string, content string) error {
 	if err != nil {
 		return err
 	}
-	ver, err := b.store.Write(ctx, path, content, "")
-	if err != nil {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if err := b.store.Write(ctx, path, content); err != nil {
 		return err
 	}
-	return syncEntry(ctx, b.store, b.catalog, path, doc, ver)
+	return index(ctx, b.catalog, path, doc)
 }
 
 // Edit replaces oldString with newString by exact match, like Claude Code's
@@ -118,44 +115,36 @@ func (b *Bundle) Edit(ctx context.Context, path, oldString, newString string, re
 		return errors.New("old string and new string must differ")
 	}
 
-	var (
-		doc *okf.Document
-		ver Version
-	)
-	for attempt := 1; ; attempt++ {
-		content, cur, err := b.store.Read(ctx, path)
-		if err != nil {
-			return err
-		}
-		switch n := strings.Count(content, oldString); {
-		case n == 0:
-			return fmt.Errorf("%w: %s", ErrNoMatch, path)
-		case n > 1 && !replaceAll:
-			return fmt.Errorf("%w: %d occurrences in %s", ErrAmbiguousMatch, n, path)
-		}
-		latest := strings.ReplaceAll(content, oldString, newString)
-		if doc, err = okf.ParseDocument(latest); err != nil {
-			return err
-		}
-		ver, err = b.store.Write(ctx, path, latest, cur)
-		if err == nil {
-			break
-		}
-		// Another writer changed the document between Read and Write; retry
-		// against its content so the edit neither loses nor clobbers theirs.
-		if !errors.Is(err, ErrConflict) || attempt == maxEditAttempts {
-			return err
-		}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	content, err := b.store.Read(ctx, path)
+	if err != nil {
+		return err
 	}
-
-	return syncEntry(ctx, b.store, b.catalog, path, doc, ver)
+	switch n := strings.Count(content, oldString); {
+	case n == 0:
+		return fmt.Errorf("%w: %s", ErrNoMatch, path)
+	case n > 1 && !replaceAll:
+		return fmt.Errorf("%w: %d occurrences in %s", ErrAmbiguousMatch, n, path)
+	}
+	content = strings.ReplaceAll(content, oldString, newString)
+	doc, err := okf.ParseDocument(content)
+	if err != nil {
+		return err
+	}
+	if err := b.store.Write(ctx, path, content); err != nil {
+		return err
+	}
+	return index(ctx, b.catalog, path, doc)
 }
 
 func (b *Bundle) Delete(ctx context.Context, path string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if err := b.store.Delete(ctx, path); err != nil {
 		return err
 	}
-	return syncEntry(ctx, b.store, b.catalog, path, nil, "")
+	return b.catalog.Delete(ctx, path)
 }
 
 // DeleteDir deletes every document under dir, recursively, and returns their
@@ -173,7 +162,7 @@ func (b *Bundle) DeleteDir(ctx context.Context, dir string) ([]string, error) {
 		}
 		return page, err
 	}, func(path string) error {
-		// Another writer may have deleted it since the listing.
+		// A concurrent call may have deleted it since the listing.
 		if err := b.Delete(ctx, path); err != nil && !errors.Is(err, ErrNotFound) {
 			return err
 		}
@@ -186,17 +175,19 @@ func (b *Bundle) DeleteDir(ctx context.Context, dir string) ([]string, error) {
 // Move renames the document at from to to. It fails with ErrExists if a
 // document is already at to.
 func (b *Bundle) Move(ctx context.Context, from, to string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	if err := b.store.Move(ctx, from, to); err != nil {
 		return err
 	}
-	doc, ver, err := load(ctx, b.store, to)
+	doc, err := load(ctx, b.store, to)
 	if err != nil {
 		return err
 	}
-	if err := syncEntry(ctx, b.store, b.catalog, to, doc, ver); err != nil {
+	if err := index(ctx, b.catalog, to, doc); err != nil {
 		return err
 	}
-	return syncEntry(ctx, b.store, b.catalog, from, nil, "")
+	return b.catalog.Delete(ctx, from)
 }
 
 func (b *Bundle) List(ctx context.Context, dir string) ([]Entry, error) {
@@ -207,50 +198,23 @@ func (b *Bundle) Tree(ctx context.Context, dir string, depth int, page PageReque
 	return b.store.Tree(ctx, dir, depth, page)
 }
 
-// syncEntry makes the catalog entry for path reflect the store, starting from
-// the state the caller last saw: doc at version ver, or a nil doc and empty
-// version if the document does not exist. Since another writer may change the
-// document meanwhile and put its own entry first, syncEntry checks the store
-// after every put and re-derives the entry until the store stops moving. Each
-// extra round follows another write to path, so it ends once writes do.
-func syncEntry(ctx context.Context, store Store, catalog Catalog, path string, doc *okf.Document, ver Version) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		if err := index(ctx, catalog, path, doc); err != nil {
-			return err
-		}
-		cur, err := store.Stat(ctx, path)
-		if err != nil && !errors.Is(err, ErrNotFound) {
-			return err
-		}
-		if cur == ver {
-			return nil
-		}
-		if doc, ver, err = load(ctx, store, path); err != nil {
-			return err
-		}
-	}
-}
-
 // load reads and parses the document at path. A missing document yields a nil
-// doc and empty version, as does one whose frontmatter fails to parse (with a
-// warning), so that neither gets a catalog entry.
-func load(ctx context.Context, store Store, path string) (*okf.Document, Version, error) {
-	content, ver, err := store.Read(ctx, path)
+// doc, as does one whose frontmatter fails to parse (with a warning), so that
+// neither gets a catalog entry.
+func load(ctx context.Context, store Store, path string) (*okf.Document, error) {
+	content, err := store.Read(ctx, path)
 	if errors.Is(err, ErrNotFound) {
-		return nil, "", nil
+		return nil, nil
 	}
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	doc, err := okf.ParseDocument(content)
 	if err != nil {
 		slog.Warn("leaving unparsable document out of catalog", "path", path, "error", err)
-		return nil, ver, nil
+		return nil, nil
 	}
-	return doc, ver, nil
+	return doc, nil
 }
 
 // index makes the catalog entry for path reflect doc, dropping it when doc is
@@ -272,7 +236,7 @@ func (b *Bundle) Dump(ctx context.Context, w io.Writer) error {
 	err := eachPage(func(req PageRequest) (Page, error) {
 		return b.store.Tree(ctx, ".", -1, req)
 	}, func(path string) error {
-		content, _, err := b.store.Read(ctx, path)
+		content, err := b.store.Read(ctx, path)
 		if errors.Is(err, ErrNotFound) {
 			return nil
 		}

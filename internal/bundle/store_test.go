@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -17,17 +18,17 @@ func TestDirStore(t *testing.T) {
 	}
 	defer r.Close()
 
-	if _, err := r.Write(ctx, "metrics/revenue.md", "---\ntype: Metric\n---\n", ""); err != nil {
+	if err := r.Write(ctx, "metrics/revenue.md", "---\ntype: Metric\n---\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	if _, err := r.Write(ctx, "index.md", "# Index\n", ""); err != nil {
+	if err := r.Write(ctx, "index.md", "# Index\n"); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
 	os.WriteFile(filepath.Join(dir, "notes.txt"), nil, 0o644)
 	os.MkdirAll(filepath.Join(dir, ".git"), 0o755)
 	os.WriteFile(filepath.Join(dir, ".git", "x.md"), nil, 0o644)
 
-	data, _, err := r.Read(ctx, "metrics/revenue.md")
+	data, err := r.Read(ctx, "metrics/revenue.md")
 	if err != nil || data != "---\ntype: Metric\n---\n" {
 		t.Errorf("Read() = %q, %v", data, err)
 	}
@@ -69,7 +70,7 @@ func TestDirStore(t *testing.T) {
 	if err := r.Delete(ctx, "index.md"); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if _, _, err := r.Read(ctx, "index.md"); !errors.Is(err, ErrNotFound) {
+	if _, err := r.Read(ctx, "index.md"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Read() after Delete error = %v, want %v", err, ErrNotFound)
 	}
 	if err := r.Delete(ctx, "index.md"); !errors.Is(err, ErrNotFound) {
@@ -86,7 +87,7 @@ func TestDirStoreTreePagination(t *testing.T) {
 	defer r.Close()
 	// WalkDir visits a/b.md before a.md; byte order puts a.md first.
 	for _, p := range []string{"a/b.md", "a.md", "b.md", "a/c/d.md"} {
-		if _, err := r.Write(ctx, p, "", ""); err != nil {
+		if err := r.Write(ctx, p, ""); err != nil {
 			t.Fatalf("Write(%q) error = %v", p, err)
 		}
 	}
@@ -117,42 +118,47 @@ func TestDirStoreRejectsEscapingPaths(t *testing.T) {
 	}
 	defer r.Close()
 	for _, name := range []string{"../x.md", "/etc/passwd", "a/../../x.md", "."} {
-		if _, err := r.Write(t.Context(), name, "", ""); err == nil {
+		if err := r.Write(t.Context(), name, ""); err == nil {
 			t.Errorf("Write(%q) error = nil", name)
 		}
 	}
 }
 
-func TestDirStoreConditionalWrite(t *testing.T) {
+func TestDirStoreReadNeverSeesPartialWrite(t *testing.T) {
 	ctx := t.Context()
 	r, err := OpenDir(t.TempDir())
 	if err != nil {
 		t.Fatalf("OpenDir() error = %v", err)
 	}
 	defer r.Close()
-
-	v1, err := r.Write(ctx, "a.md", "one", "")
-	if err != nil {
+	versions := []string{strings.Repeat("a", 64<<10), strings.Repeat("b", 64<<10)}
+	if err := r.Write(ctx, "a.md", versions[0]); err != nil {
 		t.Fatalf("Write() error = %v", err)
 	}
-	if _, got, _ := r.Read(ctx, "a.md"); got != v1 {
-		t.Errorf("Read() version = %q, want %q", got, v1)
-	}
-	v2, err := r.Write(ctx, "a.md", "two", v1)
-	if err != nil {
-		t.Fatalf("Write(ifMatch current) error = %v", err)
-	}
-	if v2 == v1 {
-		t.Errorf("version did not change after content changed")
-	}
-	if _, err := r.Write(ctx, "a.md", "three", v1); !errors.Is(err, ErrConflict) {
-		t.Errorf("Write(ifMatch stale) error = %v, want %v", err, ErrConflict)
-	}
-	if got, _, _ := r.Read(ctx, "a.md"); got != "two" {
-		t.Errorf("content after conflict = %q, want %q", got, "two")
-	}
-	if _, err := r.Write(ctx, "missing.md", "x", v1); !errors.Is(err, ErrConflict) {
-		t.Errorf("Write(missing, ifMatch) error = %v, want %v", err, ErrConflict)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := range 200 {
+			if err := r.Write(ctx, "a.md", versions[i%2]); err != nil {
+				t.Errorf("Write() error = %v", err)
+				return
+			}
+		}
+	}()
+	for {
+		select {
+		case <-done:
+			return
+		default:
+		}
+		got, err := r.Read(ctx, "a.md")
+		if err != nil {
+			t.Fatalf("Read() error = %v", err)
+		}
+		if !slices.Contains(versions, got) {
+			t.Fatalf("Read() saw a partial write of %d bytes", len(got))
+		}
 	}
 }
 
@@ -164,7 +170,7 @@ func TestDirStoreMove(t *testing.T) {
 	}
 	defer r.Close()
 	for _, p := range []string{"a.md", "b.md"} {
-		if _, err := r.Write(ctx, p, p, ""); err != nil {
+		if err := r.Write(ctx, p, p); err != nil {
 			t.Fatalf("Write(%q) error = %v", p, err)
 		}
 	}
@@ -182,13 +188,13 @@ func TestDirStoreMove(t *testing.T) {
 	if err := r.Move(ctx, "a.md", "sub/dir/c.md"); err != nil {
 		t.Fatalf("Move() error = %v", err)
 	}
-	if _, _, err := r.Read(ctx, "a.md"); !errors.Is(err, ErrNotFound) {
+	if _, err := r.Read(ctx, "a.md"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Read(a.md) after Move error = %v, want %v", err, ErrNotFound)
 	}
-	if data, _, err := r.Read(ctx, "sub/dir/c.md"); err != nil || data != "a.md" {
+	if data, err := r.Read(ctx, "sub/dir/c.md"); err != nil || data != "a.md" {
 		t.Errorf("Read(sub/dir/c.md) = %q, %v, want %q", data, err, "a.md")
 	}
-	if data, _, _ := r.Read(ctx, "b.md"); data != "b.md" {
+	if data, _ := r.Read(ctx, "b.md"); data != "b.md" {
 		t.Errorf("Read(b.md) = %q, want it untouched", data)
 	}
 }

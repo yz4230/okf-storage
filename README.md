@@ -64,6 +64,11 @@ docker build -t okf-storage .
 docker run --rm -p 8080:8080 -v okf-data:/data -e OKF_STORAGE_TOKEN=... okf-storage
 ```
 
+Run one server per bundle directory: the search index lives in memory, so the
+server locks the directory and a second one on it fails to start. On
+Kubernetes, use `replicas: 1` with the `Recreate` deployment strategy, since a
+rolling update would start the new pod while the old one still holds the lock.
+
 ## Tools
 
 | Tool     | Description                                                           |
