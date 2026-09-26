@@ -56,8 +56,9 @@ type DirStore struct {
 	root *os.Root
 	// dir is the bundle root held open and locked for the store's lifetime.
 	dir *os.File
-	// mu serializes writes within the process.
-	mu sync.Mutex
+	// mu serializes writes within the process, and Read takes it shared so
+	// that it never sees a half-written document.
+	mu sync.RWMutex
 }
 
 var _ Store = (*DirStore)(nil)
@@ -95,6 +96,8 @@ func (r *DirStore) Read(_ context.Context, path string) (string, error) {
 	if err := validPath(path); err != nil {
 		return "", err
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	data, err := r.root.ReadFile(path)
 	if err != nil {
 		return "", notFound(path, err)
@@ -111,19 +114,7 @@ func (r *DirStore) Write(_ context.Context, path string, content string) error {
 	if err := r.root.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	// Write a hidden temporary file and rename it over path, so that readers,
-	// which take no lock, never see a half-written document, nor does a crash
-	// leave one. mu makes a fixed name safe; one left behind by a crash is
-	// overwritten next time.
-	tmp := filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".tmp")
-	if err := r.root.WriteFile(tmp, []byte(content), 0o644); err != nil {
-		return err
-	}
-	if err := r.root.Rename(tmp, path); err != nil {
-		r.root.Remove(tmp)
-		return err
-	}
-	return nil
+	return r.root.WriteFile(path, []byte(content), 0o644)
 }
 
 func (r *DirStore) Delete(_ context.Context, path string) error {
