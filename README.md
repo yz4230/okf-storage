@@ -88,7 +88,6 @@ rolling update would start the new pod while the old one still holds the lock.
 | -------------------- | ---------------------------------------------------------------------------- |
 | `okf://guide`        | Guide for agents on structuring, writing, linking and maintaining documents |
 | `okf://spec`         | The full OKF v0.2 specification                                              |
-| `okf://docs/{+path}` | A document in the bundle by path, e.g. `okf://docs/metrics/revenue.md`       |
 
 The server also sends instructions on initialization (`cmd/mcpcmd/instructions.md`)
 telling agents to search the bundle before answering and to record durable knowledge

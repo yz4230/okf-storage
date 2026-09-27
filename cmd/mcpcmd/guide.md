@@ -180,5 +180,3 @@ Conventional leading words are `**Creation**`, `**Update**`,
   not match `"2"`.
 - `tree` and `search` return at most `limit` paths; call again with `after`
   set to the returned `next` to get the rest.
-- Every document is also available as the resource `okf://docs/{path}`, e.g.
-  `okf://docs/metrics/revenue.md`.

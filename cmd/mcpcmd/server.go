@@ -25,6 +25,6 @@ func newServer(b *bundle.Bundle) *mcp.Server {
 	})
 	server.AddReceivingMiddleware(withOverview(b))
 	addTools(server, b)
-	addResources(server, b)
+	addResources(server)
 	return server
 }

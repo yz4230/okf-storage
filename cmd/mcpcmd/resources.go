@@ -3,12 +3,8 @@ package mcpcmd
 import (
 	"context"
 	_ "embed"
-	"errors"
-	"net/url"
-	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
 //go:embed guide.md
@@ -22,12 +18,11 @@ var guide string
 var spec string
 
 const (
-	guideURI  = "okf://guide"
-	specURI   = "okf://spec"
-	docPrefix = "okf://docs/"
+	guideURI = "okf://guide"
+	specURI  = "okf://spec"
 )
 
-func addResources(s *mcp.Server, b *bundle.Bundle) {
+func addResources(s *mcp.Server) {
 	s.AddResource(&mcp.Resource{
 		URI:         guideURI,
 		Name:        "guide",
@@ -48,28 +43,6 @@ func addResources(s *mcp.Server, b *bundle.Bundle) {
 		Annotations: &mcp.Annotations{Audience: []mcp.Role{"assistant"}, Priority: 0.5},
 	}, func(context.Context, *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
 		return markdownResult(specURI, spec), nil
-	})
-
-	s.AddResourceTemplate(&mcp.ResourceTemplate{
-		URITemplate: docPrefix + "{+path}",
-		Name:        "document",
-		Title:       "Bundle document",
-		Description: "A document in the knowledge bundle by its path relative to the bundle root, e.g. okf://docs/metrics/revenue.md.",
-		MIMEType:    "text/markdown",
-	}, func(ctx context.Context, req *mcp.ReadResourceRequest) (*mcp.ReadResourceResult, error) {
-		uri := req.Params.URI
-		path, err := url.PathUnescape(strings.TrimPrefix(uri, docPrefix))
-		if err != nil {
-			return nil, mcp.ResourceNotFoundError(uri)
-		}
-		content, err := b.Read(ctx, path)
-		if errors.Is(err, bundle.ErrNotFound) {
-			return nil, mcp.ResourceNotFoundError(uri)
-		}
-		if err != nil {
-			return nil, err
-		}
-		return markdownResult(uri, content), nil
 	})
 }
 
