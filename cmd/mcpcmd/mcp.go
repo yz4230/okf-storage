@@ -15,7 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
-	"github.com/yz4230/okf-storage/internal/bundle"
+	"github.com/yz4230/okf-storage/internal/localbundle"
 )
 
 // tokenEnv names the environment variable holding the bearer token. It is
@@ -47,16 +47,11 @@ func init() {
 }
 
 func serve(ctx context.Context, addr, dir, path, token string) error {
-	store, err := bundle.OpenDir(dir)
+	b, err := localbundle.NewLocalBundle(dir)
 	if err != nil {
 		return err
 	}
-	defer store.Close()
-	catalog := bundle.NewMemCatalog()
-	if err := bundle.Reindex(ctx, store, catalog); err != nil {
-		return err
-	}
-	b := bundle.NewBundle(store, catalog)
+	defer b.Close()
 
 	if token == "" {
 		slog.Warn("serving without authentication; set " + tokenEnv + " to require a bearer token")
@@ -98,7 +93,7 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 // cannot drive an unauthenticated local server. With a token that check is
 // redundant, and it would block hosted clients such as ChatGPT that send an
 // Origin header.
-func newHandler(b *bundle.Bundle, path, token string) http.Handler {
+func newHandler(b bundle, path, token string) http.Handler {
 	server := newServer(b)
 	var h http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },

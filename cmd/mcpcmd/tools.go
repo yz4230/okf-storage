@@ -2,13 +2,9 @@ package mcpcmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
-	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
 type pathInput struct {
@@ -27,72 +23,42 @@ type editInput struct {
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"replace every occurrence of old_string"`
 }
 
-type deleteInput struct {
-	Path string `json:"path,omitempty" jsonschema:"path of the document to delete"`
-	Dir  string `json:"dir,omitempty" jsonschema:"instead of path, a directory whose documents to delete recursively, e.g. drafts/old"`
-}
-
 type moveInput struct {
 	From string `json:"from" jsonschema:"path of the document to move"`
-	To   string `json:"to" jsonschema:"new path; must not already hold a document"`
+	To   string `json:"to" jsonschema:"new path; must not already exist"`
 }
 
 type listInput struct {
 	Dir string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root; defaults to the root"`
 }
 
-// pageInput selects a page of a path listing.
-type pageInput struct {
-	After string `json:"after,omitempty" jsonschema:"the next value from the previous call, to continue a listing; omit for the first page"`
-	Limit int    `json:"limit,omitempty" jsonschema:"maximum number of paths to return; defaults to 100"`
+type searchFrontmatterInput struct {
+	Filter map[string]any `json:"filter,omitempty" jsonschema:"frontmatter fields to match, e.g. {\"type\": \"metric\"}; values match by type, so 2 does not match \"2\"; a list field matches if it contains the value (or every value of a list); an object matches nested fields; empty matches every document with frontmatter"`
 }
 
-// defaultLimit and maxLimit keep one listing small enough for a model's
-// context; larger results are read page by page.
-const (
-	defaultLimit = 100
-	maxLimit     = 1000
-)
-
-func (in pageInput) request() bundle.PageRequest {
-	limit := in.Limit
-	if limit <= 0 {
-		limit = defaultLimit
-	}
-	return bundle.PageRequest{After: in.After, Limit: min(limit, maxLimit)}
-}
-
-type treeInput struct {
-	Dir   string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root; defaults to the root"`
-	Depth *int   `json:"depth,omitempty" jsonschema:"maximum depth, where 1 is the documents directly under dir; omit for no limit"`
-	pageInput
-}
-
-type searchInput struct {
-	Filter map[string]any `json:"filter,omitempty" jsonschema:"frontmatter fields to match, e.g. {\"type\": \"metric\"}; values must be strings, numbers or booleans and match by type, so 2 does not match \"2\"; a list field matches if it contains the value; empty matches every document with frontmatter"`
-	pageInput
+type searchContentInput struct {
+	Pattern string `json:"pattern" jsonschema:"regular expression (Go RE2 syntax) to find in document bodies, excluding frontmatter"`
 }
 
 type pathsOutput struct {
 	Paths []string `json:"paths"`
-	Next  string   `json:"next,omitempty" jsonschema:"present when more paths follow; pass it as after to get them"`
 }
 
-func pathsResult(page bundle.Page, err error) (*mcp.CallToolResult, pathsOutput, error) {
-	return nil, pathsOutput{Paths: nonNil(page.Paths), Next: page.Next}, err
+func pathsResult(paths []string, err error) (*mcp.CallToolResult, pathsOutput, error) {
+	return nil, pathsOutput{Paths: nonNil(paths)}, err
 }
 
 type listOutput struct {
-	Entries []bundle.Entry `json:"entries"`
+	Entries []string `json:"entries" jsonschema:"names of the entries; directories end with /"`
 }
 
-func addTools(s *mcp.Server, b *bundle.Bundle) {
+func addTools(s *mcp.Server, b bundle) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "read",
 		Description: "Read a document from the knowledge bundle. Check relevant documents before answering or starting a task.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in pathInput) (*mcp.CallToolResult, any, error) {
-		content, err := b.Read(ctx, in.Path)
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in pathInput) (*mcp.CallToolResult, any, error) {
+		content, err := b.Read(in.Path)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -103,8 +69,8 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 		Name:        "write",
 		Description: "Create a document in the knowledge bundle, or overwrite an existing one with the full content given; it never appends or merges. Before overwriting, read the document and carry over everything you want to keep; for partial changes use edit instead. Use it on your own initiative to record durable knowledge learned in the conversation (decisions, definitions, procedures, facts about systems); read okf://guide before your first change.",
 		Annotations: &mcp.ToolAnnotations{IdempotentHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in writeInput) (*mcp.CallToolResult, any, error) {
-		created, err := b.Write(ctx, in.Path, in.Content)
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in writeInput) (*mcp.CallToolResult, any, error) {
+		created, err := b.Write(in.Path, in.Content)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -117,8 +83,8 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "edit",
 		Description: "Replace an exact string in a document. old_string must occur exactly once unless replace_all is set. Use it on your own initiative to extend or correct existing knowledge instead of creating duplicates.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in editInput) (*mcp.CallToolResult, any, error) {
-		if err := b.Edit(ctx, in.Path, in.OldString, in.NewString, in.ReplaceAll); err != nil {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in editInput) (*mcp.CallToolResult, any, error) {
+		if err := b.Edit(in.Path, in.OldString, in.NewString, in.ReplaceAll); err != nil {
 			return nil, nil, err
 		}
 		return textResult(fmt.Sprintf("edited %s", in.Path)), nil, nil
@@ -126,31 +92,21 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "delete",
-		Description: "Delete a document from the knowledge bundle, or with dir instead of path, every document under a directory recursively.",
+		Description: "Delete a document from the knowledge bundle. Directories left empty are removed.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(true), IdempotentHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in deleteInput) (*mcp.CallToolResult, any, error) {
-		switch {
-		case (in.Path == "") == (in.Dir == ""):
-			return nil, nil, errors.New("set exactly one of path and dir")
-		case in.Path != "":
-			if err := b.Delete(ctx, in.Path); err != nil {
-				return nil, nil, err
-			}
-			return textResult(fmt.Sprintf("deleted %s", in.Path)), nil, nil
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in pathInput) (*mcp.CallToolResult, any, error) {
+		if err := b.Delete(in.Path); err != nil {
+			return nil, nil, err
 		}
-		deleted, err := b.DeleteDir(ctx, in.Dir)
-		if err != nil {
-			return nil, nil, fmt.Errorf("deleted %d documents, then: %w", len(deleted), err)
-		}
-		return textResult(fmt.Sprintf("deleted %d documents:\n%s", len(deleted), strings.Join(deleted, "\n"))), nil, nil
+		return textResult(fmt.Sprintf("deleted %s", in.Path)), nil, nil
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "move",
 		Description: "Move or rename a document, keeping its content. Fails if a document already exists at the new path. Links and index entries pointing at the old path are not updated; fix them afterwards.",
 		Annotations: &mcp.ToolAnnotations{DestructiveHint: new(false)},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in moveInput) (*mcp.CallToolResult, any, error) {
-		if err := b.Move(ctx, in.From, in.To); err != nil {
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in moveInput) (*mcp.CallToolResult, any, error) {
+		if err := b.Move(in.From, in.To); err != nil {
 			return nil, nil, err
 		}
 		return textResult(fmt.Sprintf("moved %s to %s", in.From, in.To)), nil, nil
@@ -158,54 +114,28 @@ func addTools(s *mcp.Server, b *bundle.Bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list",
-		Description: "List the markdown documents and subdirectories directly under a directory, like ls.",
+		Description: "List the entries directly under a directory, like ls. Directory names end with /.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput, error) {
-		entries, err := b.List(ctx, orRoot(in.Dir))
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, listOutput, error) {
+		entries, err := b.List(orRoot(in.Dir))
 		return nil, listOutput{Entries: nonNil(entries)}, err
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "tree",
-		Description: "List the paths of markdown documents under a directory recursively, like tree -L depth. Results are paged; if next is returned, call again with it as after.",
-		InputSchema: treeInputSchema(),
+		Name:        "search_frontmatter",
+		Description: "Find documents whose frontmatter matches every field in filter. Use it to find existing knowledge before answering, and before writing to avoid duplicates.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in treeInput) (*mcp.CallToolResult, pathsOutput, error) {
-		depth := -1
-		if in.Depth != nil {
-			depth = *in.Depth
-		}
-		return pathsResult(b.Tree(ctx, orRoot(in.Dir), depth, in.request()))
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in searchFrontmatterInput) (*mcp.CallToolResult, pathsOutput, error) {
+		return pathsResult(b.SearchFrontmatter(in.Filter))
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
-		Name:        "search",
-		Description: "Find documents whose frontmatter matches every field in filter. Use it to find existing knowledge before answering, and before writing to avoid duplicates. Results are paged; if next is returned, call again with it as after.",
-		InputSchema: inputSchema[searchInput](),
+		Name:        "search_content",
+		Description: "Find documents whose body matches a regular expression, like grep -l. Use it for knowledge that frontmatter does not describe.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchInput) (*mcp.CallToolResult, pathsOutput, error) {
-		return pathsResult(b.Search(ctx, in.Filter, in.request()))
+	}, func(_ context.Context, _ *mcp.CallToolRequest, in searchContentInput) (*mcp.CallToolResult, pathsOutput, error) {
+		return pathsResult(b.SearchContent(in.Pattern))
 	})
-}
-
-// treeInputSchema is the inferred schema for treeInput with depth limited to
-// positive values, so that 0 can't be mistaken for "no limit".
-func treeInputSchema() *jsonschema.Schema {
-	schema := inputSchema[treeInput]()
-	schema.Properties["depth"].Minimum = new(1.0)
-	return schema
-}
-
-// inputSchema is the inferred schema for T with the page limit bounded.
-func inputSchema[T any]() *jsonschema.Schema {
-	schema, err := jsonschema.For[T](nil)
-	if err != nil {
-		panic(err)
-	}
-	limit := schema.Properties["limit"]
-	limit.Minimum = new(1.0)
-	limit.Maximum = new(float64(maxLimit))
-	return schema
 }
 
 func textResult(text string) *mcp.CallToolResult {

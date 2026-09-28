@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
 func TestInstructions(t *testing.T) {
@@ -20,12 +19,7 @@ func TestInstructions(t *testing.T) {
 }
 
 func TestInstructionsOverview(t *testing.T) {
-	store, err := bundle.OpenDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("OpenDir() error = %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	b := bundle.NewBundle(store, bundle.NewMemCatalog())
+	b := newBundle(t)
 	docs := map[string]string{
 		"a.md":         "---\ntype: Metric\ntags: [billing, finance]\n---\n",
 		"b/c.md":       "---\ntype: Metric\ntags: billing\n---\n",
@@ -33,7 +27,7 @@ func TestInstructionsOverview(t *testing.T) {
 		"notes/log.md": "# Update Log\n",
 	}
 	for path, content := range docs {
-		if _, err := b.Write(t.Context(), path, content); err != nil {
+		if _, err := b.Write(path, content); err != nil {
 			t.Fatalf("Write(%s) error = %v", path, err)
 		}
 	}
@@ -65,7 +59,7 @@ func TestInstructionsOverview(t *testing.T) {
 		}
 	}
 
-	if _, err := b.Write(t.Context(), "index.md", "---\nokf_version: \"0.2\"\n---\n# Metrics\n\n* [A](a.md) - The A metric.\n"); err != nil {
+	if _, err := b.Write("index.md", "---\nokf_version: \"0.2\"\n---\n# Metrics\n\n* [A](a.md) - The A metric.\n"); err != nil {
 		t.Fatalf("Write(index.md) error = %v", err)
 	}
 	got = connectClient()

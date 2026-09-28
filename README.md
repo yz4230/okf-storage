@@ -64,23 +64,22 @@ docker build -t okf-storage .
 docker run --rm -p 8080:8080 -v okf-data:/data -e OKF_STORAGE_TOKEN=... okf-storage
 ```
 
-Run one server per bundle directory: the search index lives in memory, so the
-server locks the directory and a second one on it fails to start. On
-Kubernetes, use `replicas: 1` with the `Recreate` deployment strategy, since a
-rolling update would start the new pod while the old one still holds the lock.
+Run one server per bundle directory: writes are serialized within a single
+process only, and nothing stops a second server on the same directory. On
+Kubernetes, use `replicas: 1` with the `Recreate` deployment strategy.
 
 ## Tools
 
-| Tool     | Description                                                           |
-| -------- | --------------------------------------------------------------------- |
-| `read`   | Read a document                                                       |
-| `write`  | Create a document, or overwrite one whole (no append or merge)        |
-| `edit`   | Replace an exact string in a document (`replace_all` for every match) |
-| `delete` | Delete a document, or every document under a directory (`dir`)       |
-| `move`   | Move or rename a document; fails if the new path already exists       |
-| `list`   | List documents and subdirectories directly under a directory          |
-| `tree`   | List document paths under a directory recursively (optional `depth`)  |
-| `search` | Find documents whose frontmatter matches every field in `filter`      |
+| Tool                 | Description                                                           |
+| -------------------- | --------------------------------------------------------------------- |
+| `read`               | Read a document                                                       |
+| `write`              | Create a document, or overwrite one whole (no append or merge)        |
+| `edit`               | Replace an exact string in a document (`replace_all` for every match) |
+| `delete`             | Delete a document; directories left empty are removed                 |
+| `move`               | Move or rename a document; fails if the new path already exists       |
+| `list`               | List the entries directly under a directory (directories end in `/`)  |
+| `search_frontmatter` | Find documents whose frontmatter matches every field in `filter`      |
+| `search_content`     | Find documents whose body matches a regular expression                |
 
 ## Resources
 
@@ -126,7 +125,7 @@ mise run build
 │       ├── guide.md     # agent guide served as okf://guide
 │       └── spec.md      # OKF v0.2 specification served as okf://spec
 ├── internal/
-│   ├── bundle/          # knowledge bundle: file store and frontmatter catalog
+│   ├── localbundle/     # knowledge bundle on the local filesystem
 │   └── okf/             # OKF document and frontmatter parser
 ├── main.go
 ├── go.mod

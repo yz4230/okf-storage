@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"maps"
 	pathpkg "path"
@@ -12,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/yz4230/okf-storage/internal/bundle"
 	"github.com/yz4230/okf-storage/internal/okf"
 )
 
@@ -30,7 +30,7 @@ var vocabularyKeys = []string{"type", "tags"}
 // withOverview appends an overview of the bundle's current contents to the
 // instructions of every initialize and discover result, so that agents know
 // what to search for before their first call.
-func withOverview(b *bundle.Bundle) mcp.Middleware {
+func withOverview(b bundle) mcp.Middleware {
 	return func(next mcp.MethodHandler) mcp.MethodHandler {
 		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 			res, err := next(ctx, method, req)
@@ -46,7 +46,7 @@ func withOverview(b *bundle.Bundle) mcp.Middleware {
 			default:
 				return res, nil
 			}
-			o, err := overview(ctx, b)
+			o, err := overview(b)
 			if err != nil {
 				slog.Warn("leaving bundle overview out of instructions", "error", err)
 				return res, nil
@@ -59,48 +59,41 @@ func withOverview(b *bundle.Bundle) mcp.Middleware {
 
 // overview describes the bundle: how many documents it has, its root
 // index.md (or top-level entries without one) and the vocabulary in use.
-func overview(ctx context.Context, b *bundle.Bundle) (string, error) {
+func overview(b bundle) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("## Current contents\n\n")
 
 	counts := make(map[string]map[string]int)
 	n := 0
-	var req bundle.PageRequest
-	for {
-		page, err := b.Search(ctx, nil, req)
+	paths, err := b.SearchFrontmatter(nil)
+	if err != nil {
+		return "", err
+	}
+	for _, path := range paths {
+		// The root index.md may carry okf_version, but is not a concept.
+		if base := pathpkg.Base(path); base == "index.md" || base == "log.md" {
+			continue
+		}
+		content, err := b.Read(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return "", err
 		}
-		for _, path := range page.Paths {
-			// The root index.md may carry okf_version, but is not a concept.
-			if base := pathpkg.Base(path); base == "index.md" || base == "log.md" {
-				continue
-			}
-			content, err := b.Read(ctx, path)
-			if errors.Is(err, bundle.ErrNotFound) {
-				continue
-			}
-			if err != nil {
-				return "", err
-			}
-			doc, err := okf.ParseDocument(content)
-			if err != nil {
-				continue
-			}
-			n++
-			for _, key := range vocabularyKeys {
-				for _, v := range values(doc.Frontmatter[key]) {
-					if counts[key] == nil {
-						counts[key] = make(map[string]int)
-					}
-					counts[key][v]++
+		doc, err := okf.ParseDocument(content)
+		if err != nil {
+			continue
+		}
+		n++
+		for _, key := range vocabularyKeys {
+			for _, v := range values(doc.Frontmatter[key]) {
+				if counts[key] == nil {
+					counts[key] = make(map[string]int)
 				}
+				counts[key][v]++
 			}
 		}
-		if page.Next == "" {
-			break
-		}
-		req.After = page.Next
 	}
 	if n == 0 {
 		sb.WriteString("The bundle has no concepts with frontmatter yet.\n")
@@ -108,7 +101,7 @@ func overview(ctx context.Context, b *bundle.Bundle) (string, error) {
 	}
 	fmt.Fprintf(&sb, "The bundle has %d concepts with frontmatter.\n", n)
 
-	index, err := b.Read(ctx, "index.md")
+	index, err := b.Read("index.md")
 	switch {
 	case err == nil:
 		body := index
@@ -120,17 +113,14 @@ func overview(ctx context.Context, b *bundle.Bundle) (string, error) {
 			body = strings.ToValidUTF8(body[:maxIndexBytes], "") + "\n\n(truncated; read index.md for the rest)"
 		}
 		fmt.Fprintf(&sb, "\nThe root index.md:\n\n<index.md>\n%s\n</index.md>\n", body)
-	case errors.Is(err, bundle.ErrNotFound):
-		entries, err := b.List(ctx, ".")
+	case errors.Is(err, fs.ErrNotExist):
+		entries, err := b.List(".")
 		if err != nil {
 			return "", err
 		}
 		sb.WriteString("\nTop-level entries (there is no root index.md):\n\n")
 		for _, e := range entries {
-			if e.IsDir {
-				e.Path += "/"
-			}
-			fmt.Fprintf(&sb, "- %s\n", e.Path)
+			fmt.Fprintf(&sb, "- %s\n", e)
 		}
 	default:
 		return "", err

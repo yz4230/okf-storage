@@ -30,15 +30,16 @@ leaves out, such as `Attested Computation` concepts and conformance rules.
 
 ## Workflow
 
-1. **Orient.** Read the root `index.md` if it exists, then `list` or `tree`
-   the directories relevant to your task. Use `search` to find concepts by
-   frontmatter, e.g. `{"type": "Metric"}` or `{"tags": "revenue"}`.
+1. **Orient.** Read the root `index.md` if it exists, then `list` the
+   directories relevant to your task. Use `search_frontmatter` to find
+   concepts by frontmatter, e.g. `{"type": "Metric"}` or `{"tags": "revenue"}`,
+   and `search_content` to find text in their bodies.
 2. **Check before creating.** Search for an existing concept about the same
    thing (by `type`, `tags`, `resource`, likely file names). If one exists,
    extend it instead of creating a duplicate.
 3. **Reuse the vocabulary.** Before choosing a `type` or a tag, look at the
    values already used by neighbouring concepts and reuse them verbatim.
-   `Metric` and `metric` are different values to `search`.
+   `Metric` and `metric` are different values to `search_frontmatter`.
 4. **Write** the concept (see the document format below).
 5. **Link** it: add links from the concepts that relate to it, and from it to
    them.
@@ -175,8 +176,8 @@ Conventional leading words are `**Creation**`, `**Update**`,
   everything you want to keep.
 - `edit` replaces an exact string; prefer it for small changes to large
   documents.
-- `search` sees only documents with frontmatter and matches values exactly:
-  a list field such as `tags` matches if it contains the value, and `2` does
-  not match `"2"`.
-- `tree` and `search` return at most `limit` paths; call again with `after`
-  set to the returned `next` to get the rest.
+- `search_frontmatter` sees only documents with frontmatter and matches
+  values exactly: a list field such as `tags` matches if it contains the
+  value, and `2` does not match `"2"`.
+- `search_content` takes a regular expression (RE2 syntax) and searches
+  document bodies only, not frontmatter.

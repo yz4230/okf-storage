@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/yz4230/okf-storage/internal/bundle"
 )
 
 type bearerTransport struct{ token string }
@@ -23,12 +22,7 @@ func (t bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestHandlerAuth(t *testing.T) {
-	store, err := bundle.OpenDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("OpenDir() error = %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	ts := httptest.NewServer(newHandler(bundle.NewBundle(store, bundle.NewMemCatalog()), "/okf", "secret"))
+	ts := httptest.NewServer(newHandler(newBundle(t), "/okf", "secret"))
 	t.Cleanup(ts.Close)
 
 	t.Run("valid token in path connects", func(t *testing.T) {
@@ -87,12 +81,7 @@ func TestHandlerAuth(t *testing.T) {
 }
 
 func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
-	store, err := bundle.OpenDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("OpenDir() error = %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	ts := httptest.NewServer(newHandler(bundle.NewBundle(store, bundle.NewMemCatalog()), "/mcp", ""))
+	ts := httptest.NewServer(newHandler(newBundle(t), "/mcp", ""))
 	t.Cleanup(ts.Close)
 
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader("{}"))
@@ -111,12 +100,7 @@ func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
 // TestHandlerDiscover replays the server/discover request ChatGPT sends, which
 // fails unless protocol 2026-07-28 is offered.
 func TestHandlerDiscover(t *testing.T) {
-	store, err := bundle.OpenDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("OpenDir() error = %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	ts := httptest.NewServer(newHandler(bundle.NewBundle(store, bundle.NewMemCatalog()), "/mcp", ""))
+	ts := httptest.NewServer(newHandler(newBundle(t), "/mcp", ""))
 	t.Cleanup(ts.Close)
 
 	const discover = `{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
@@ -137,18 +121,13 @@ func TestHandlerDiscover(t *testing.T) {
 }
 
 func TestHandlerDump(t *testing.T) {
-	store, err := bundle.OpenDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("OpenDir() error = %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	b := bundle.NewBundle(store, bundle.NewMemCatalog())
+	b := newBundle(t)
 	want := map[string]string{
 		"index.md":           "# Index\n",
 		"metrics/revenue.md": "---\ntype: metric\n---\nRevenue.\n",
 	}
 	for p, content := range want {
-		if _, err := b.Write(t.Context(), p, content); err != nil {
+		if _, err := b.Write(p, content); err != nil {
 			t.Fatalf("Write(%q) error = %v", p, err)
 		}
 	}

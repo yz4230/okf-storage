@@ -2,23 +2,38 @@ package mcpcmd
 
 import (
 	"encoding/json"
-	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/yz4230/okf-storage/internal/bundle"
+	"github.com/yz4230/okf-storage/internal/localbundle"
 )
 
-func connect(t *testing.T) (*mcp.ClientSession, *bundle.Bundle) {
+func newBundle(t *testing.T) *localbundle.LocalBundle {
 	t.Helper()
-	store, err := bundle.OpenDir(t.TempDir())
-	if err != nil {
-		t.Fatalf("OpenDir() error = %v", err)
-	}
-	t.Cleanup(func() { store.Close() })
-	b := bundle.NewBundle(store, bundle.NewMemCatalog())
+	return openBundle(t, t.TempDir())
+}
 
+func openBundle(t *testing.T, dir string) *localbundle.LocalBundle {
+	t.Helper()
+	b, err := localbundle.NewLocalBundle(dir)
+	if err != nil {
+		t.Fatalf("NewLocalBundle() error = %v", err)
+	}
+	t.Cleanup(func() { b.Close() })
+	return b
+}
+
+func connect(t *testing.T) (*mcp.ClientSession, *localbundle.LocalBundle) {
+	t.Helper()
+	return connectDir(t, t.TempDir())
+}
+
+func connectDir(t *testing.T, dir string) (*mcp.ClientSession, *localbundle.LocalBundle) {
+	t.Helper()
+	b := openBundle(t, dir)
 	serverT, clientT := mcp.NewInMemoryTransports()
 	ss, err := newServer(b).Connect(t.Context(), serverT, nil)
 	if err != nil {
@@ -34,74 +49,51 @@ func connect(t *testing.T) (*mcp.ClientSession, *bundle.Bundle) {
 	return cs, b
 }
 
-func callPaths(t *testing.T, cs *mcp.ClientSession, tool string, args map[string]any) pathsOutput {
+func write(t *testing.T, b *localbundle.LocalBundle, docs map[string]string) {
+	t.Helper()
+	for p, content := range docs {
+		if _, err := b.Write(p, content); err != nil {
+			t.Fatalf("Write(%q) error = %v", p, err)
+		}
+	}
+}
+
+func seed(t *testing.T, files map[string]string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for p, content := range files {
+		name := filepath.Join(dir, filepath.FromSlash(p))
+		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(name, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return dir
+}
+
+func call(t *testing.T, cs *mcp.ClientSession, tool string, args map[string]any) *mcp.CallToolResult {
 	t.Helper()
 	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tool, Arguments: args})
 	if err != nil {
 		t.Fatalf("CallTool(%s, %v) error = %v", tool, args, err)
 	}
+	return res
+}
+
+func callStructured[T any](t *testing.T, cs *mcp.ClientSession, tool string, args map[string]any) T {
+	t.Helper()
+	res := call(t, cs, tool, args)
 	if res.IsError {
 		t.Fatalf("CallTool(%s, %v) failed: %v", tool, args, res.Content)
 	}
 	data, _ := json.Marshal(res.StructuredContent)
-	var out pathsOutput
+	var out T
 	if err := json.Unmarshal(data, &out); err != nil {
 		t.Fatalf("decoding %s output: %v", tool, err)
 	}
 	return out
-}
-
-func TestPagedTools(t *testing.T) {
-	cs, b := connect(t)
-	for i := range 3 {
-		if _, err := b.Write(t.Context(), fmt.Sprintf("d%d.md", i), "---\ntype: Metric\n---\n"); err != nil {
-			t.Fatalf("Write() error = %v", err)
-		}
-	}
-
-	for _, tool := range []string{"tree", "search"} {
-		t.Run(tool, func(t *testing.T) {
-			var got []string
-			args := map[string]any{"limit": 2}
-			if tool == "search" {
-				args["filter"] = map[string]any{"type": "Metric"}
-			}
-			first := callPaths(t, cs, tool, args)
-			got = append(got, first.Paths...)
-			if first.Next == "" {
-				t.Fatalf("first page = %+v, want a next", first)
-			}
-			args["after"] = first.Next
-			second := callPaths(t, cs, tool, args)
-			got = append(got, second.Paths...)
-			if want := []string{"d0.md", "d1.md", "d2.md"}; !slices.Equal(got, want) || second.Next != "" {
-				t.Errorf("pages = %v then next %q, want %v and no next", got, second.Next, want)
-			}
-		})
-	}
-}
-
-func TestPageLimitIsBounded(t *testing.T) {
-	cs, _ := connect(t)
-	for _, limit := range []int{0, maxLimit + 1} {
-		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "tree", Arguments: map[string]any{"limit": limit}})
-		if err == nil && !res.IsError {
-			t.Errorf("tree(limit: %d) succeeded, want a validation error", limit)
-		}
-	}
-	if got := (pageInput{}).request().Limit; got != defaultLimit {
-		t.Errorf("default limit = %d, want %d", got, defaultLimit)
-	}
-}
-
-func TestSearchRejectsInvalidFilter(t *testing.T) {
-	cs, _ := connect(t)
-	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "search", Arguments: map[string]any{
-		"filter": map[string]any{"tags": []any{"a"}},
-	}})
-	if err == nil && !res.IsError {
-		t.Errorf("search with a list value succeeded, want an error")
-	}
 }
 
 func TestWrite(t *testing.T) {
@@ -110,70 +102,91 @@ func TestWrite(t *testing.T) {
 		{"---\ntype: Metric\n---\nfirst\n", "created a.md"},
 		{"---\ntype: Metric\n---\nsecond\n", "overwrote a.md"},
 	} {
-		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "write", Arguments: map[string]any{"path": "a.md", "content": tc.content}})
-		if err != nil || res.IsError {
-			t.Fatalf("write failed: %v %v", err, res)
+		res := call(t, cs, "write", map[string]any{"path": "a.md", "content": tc.content})
+		if res.IsError {
+			t.Fatalf("write failed: %v", res.Content)
 		}
 		if got := res.Content[0].(*mcp.TextContent).Text; got != tc.want {
 			t.Errorf("write result = %q, want %q", got, tc.want)
 		}
-		if got, _ := b.Read(t.Context(), "a.md"); got != tc.content {
+		if got, _ := b.Read("a.md"); got != tc.content {
 			t.Errorf("content after write = %q, want %q", got, tc.content)
 		}
 	}
 }
 
-func TestDeleteDir(t *testing.T) {
-	cs, b := connect(t)
-	for _, p := range []string{"drafts/a.md", "drafts/sub/b.md", "kept.md"} {
-		if _, err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
-			t.Fatalf("Write() error = %v", err)
-		}
-	}
-	del := func(args map[string]any) *mcp.CallToolResult {
-		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "delete", Arguments: args})
-		if err != nil {
-			t.Fatalf("CallTool(delete, %v) error = %v", args, err)
-		}
-		return res
-	}
+func TestList(t *testing.T) {
+	cs, _ := connectDir(t, seed(t, map[string]string{"a.md": "# A\n", "sub/b.md": "# B\n", ".hidden.md": "# H\n", ".git/c.md": "# C\n"}))
 
-	for _, args := range []map[string]any{{}, {"path": "kept.md", "dir": "drafts"}} {
-		if res := del(args); !res.IsError {
-			t.Errorf("delete(%v) succeeded, want an error", args)
-		}
+	got := callStructured[listOutput](t, cs, "list", nil)
+	if want := []string{"a.md", "sub/"}; !slices.Equal(got.Entries, want) {
+		t.Errorf("list = %v, want %v", got.Entries, want)
 	}
-	if res := del(map[string]any{"dir": "drafts"}); res.IsError {
-		t.Fatalf("delete(dir) failed: %v", res.Content)
+}
+
+func TestDeleteRemovesEmptyDirs(t *testing.T) {
+	cs, b := connect(t)
+	write(t, b, map[string]string{"drafts/old/a.md": "# A\n", "drafts/b.md": "# B\n"})
+
+	if res := call(t, cs, "delete", map[string]any{"path": "drafts/old/a.md"}); res.IsError {
+		t.Fatalf("delete failed: %v", res.Content)
 	}
-	if got := callPaths(t, cs, "tree", nil); !slices.Equal(got.Paths, []string{"kept.md"}) {
-		t.Errorf("tree after delete(dir) = %v, want [kept.md]", got.Paths)
+	if got := callStructured[listOutput](t, cs, "list", map[string]any{"dir": "drafts"}); !slices.Equal(got.Entries, []string{"b.md"}) {
+		t.Errorf("list(drafts) = %v, want [b.md]", got.Entries)
+	}
+	if res := call(t, cs, "delete", map[string]any{"path": "drafts/b.md"}); res.IsError {
+		t.Fatalf("delete failed: %v", res.Content)
+	}
+	if got := callStructured[listOutput](t, cs, "list", nil); len(got.Entries) != 0 {
+		t.Errorf("list = %v, want empty", got.Entries)
 	}
 }
 
 func TestMove(t *testing.T) {
 	cs, b := connect(t)
-	for _, p := range []string{"a.md", "b.md"} {
-		if _, err := b.Write(t.Context(), p, "---\ntype: Metric\n---\n"); err != nil {
-			t.Fatalf("Write() error = %v", err)
-		}
-	}
-	move := func(from, to string) *mcp.CallToolResult {
-		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: "move", Arguments: map[string]any{"from": from, "to": to}})
-		if err != nil {
-			t.Fatalf("CallTool(move) error = %v", err)
-		}
-		return res
-	}
+	write(t, b, map[string]string{"old/a.md": "---\ntype: Metric\n---\n", "b.md": "---\ntype: Metric\n---\n"})
 
-	if res := move("a.md", "b.md"); !res.IsError {
+	if res := call(t, cs, "move", map[string]any{"from": "old/a.md", "to": "b.md"}); !res.IsError {
 		t.Errorf("move onto an existing document succeeded, want an error")
 	}
-	if res := move("a.md", "metrics/a.md"); res.IsError {
+	if res := call(t, cs, "move", map[string]any{"from": "old/a.md", "to": "metrics/a.md"}); res.IsError {
 		t.Fatalf("move failed: %v", res.Content)
 	}
-	got := callPaths(t, cs, "search", map[string]any{"filter": map[string]any{"type": "Metric"}})
-	if want := []string{"b.md", "metrics/a.md"}; !slices.Equal(got.Paths, want) {
-		t.Errorf("search after move = %v, want %v", got.Paths, want)
+	if got := callStructured[listOutput](t, cs, "list", nil); !slices.Equal(got.Entries, []string{"b.md", "metrics/"}) {
+		t.Errorf("list after move = %v, want [b.md metrics/]", got.Entries)
+	}
+}
+
+func TestSearch(t *testing.T) {
+	cs, _ := connectDir(t, seed(t, map[string]string{
+		"index.md":  "# Index\nMetric overview\n",
+		"b.md":      "---\ntype: Metric\ntags: [billing]\n---\nRevenue per month.\n",
+		"a/c.md":    "---\ntype: Metric\n---\nChurn rate.\n",
+		"a/d.md":    "---\ntype: Playbook\n---\nOn-call steps for revenue alerts.\n",
+		".git/x.md": "---\ntype: Metric\n---\nRevenue\n",
+		"a/.x.md":   "---\ntype: Metric\n---\nRevenue\n",
+		"notes.txt": "Revenue\n",
+	}))
+
+	tests := []struct {
+		tool string
+		args map[string]any
+		want []string
+	}{
+		{"search_frontmatter", nil, []string{"a/c.md", "a/d.md", "b.md"}},
+		{"search_frontmatter", map[string]any{"filter": map[string]any{"type": "Metric"}}, []string{"a/c.md", "b.md"}},
+		{"search_frontmatter", map[string]any{"filter": map[string]any{"tags": "billing"}}, []string{"b.md"}},
+		{"search_content", map[string]any{"pattern": "(?i)revenue"}, []string{"a/d.md", "b.md"}},
+		{"search_content", map[string]any{"pattern": "Metric"}, []string{"index.md"}},
+	}
+	for _, tt := range tests {
+		got := callStructured[pathsOutput](t, cs, tt.tool, tt.args)
+		if !slices.Equal(got.Paths, tt.want) {
+			t.Errorf("%s(%v) = %v, want %v", tt.tool, tt.args, got.Paths, tt.want)
+		}
+	}
+
+	if res := call(t, cs, "search_content", map[string]any{"pattern": "("}); !res.IsError {
+		t.Errorf("search_content with an invalid pattern succeeded, want an error")
 	}
 }
