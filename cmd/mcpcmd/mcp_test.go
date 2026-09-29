@@ -7,6 +7,8 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -181,5 +183,37 @@ func TestHandlerDump(t *testing.T) {
 				t.Errorf("archive = %v, want %v", got, want)
 			}
 		})
+	}
+}
+
+func TestServeStdio(t *testing.T) {
+	dir := t.TempDir()
+	serverIn, clientOut := io.Pipe()
+	clientIn, serverOut := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		done <- serveStdio(t.Context(), dir, &mcp.IOTransport{Reader: serverIn, Writer: serverOut})
+		serverOut.Close()
+	}()
+
+	client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
+	cs, err := client.Connect(t.Context(), &mcp.IOTransport{Reader: clientIn, Writer: clientOut}, nil)
+	if err != nil {
+		t.Fatalf("Connect() error = %v", err)
+	}
+	res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "write",
+		Arguments: map[string]any{"path": "a.md", "content": "---\ntype: Note\n---\nhi\n"},
+	})
+	if err != nil || res.IsError {
+		t.Fatalf("CallTool(write) = %v, %v", res, err)
+	}
+	cs.Close()
+
+	if err := <-done; err != nil {
+		t.Errorf("serveStdio() error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "a.md")); err != nil {
+		t.Errorf("document not written: %v", err)
 	}
 }

@@ -1,6 +1,6 @@
 # okf-storage
 
-OKF storage CLI with an MCP (Model Context Protocol) server served over HTTP.
+OKF storage CLI with an MCP (Model Context Protocol) server served over HTTP or stdio.
 
 ## Requirements
 
@@ -45,6 +45,23 @@ OKF_STORAGE_TOKEN=$(openssl rand -hex 32) go run . mcp
 ```
 
 The server shuts down gracefully on `SIGINT` / `SIGTERM`.
+
+### Local (stdio)
+
+`--stdio` serves the MCP server over stdin/stdout instead of HTTP, for clients that
+launch the server as a local subprocess. No authentication is used (`OKF_STORAGE_TOKEN`
+is ignored), `/dump` is not available, and `--addr` / `--path` cannot be combined with it.
+Logs go to stderr. The server exits when the client closes stdin.
+
+```bash
+go run . mcp --stdio --dir ./knowledge
+```
+
+For example, to register it with Claude Code:
+
+```bash
+claude mcp add okf -- /path/to/okf-storage mcp --stdio --dir /path/to/knowledge
+```
 
 ### Dump
 
@@ -115,7 +132,7 @@ mise run build
 ├── cmd/
 │   ├── root.go          # root command and logger setup
 │   └── mcpcmd/
-│       ├── mcp.go       # `mcp` command and HTTP bootstrap
+│       ├── mcp.go       # `mcp` command and HTTP / stdio bootstrap
 │       ├── server.go    # MCP server construction
 │       ├── tools.go     # MCP tool definitions
 │       ├── resources.go # MCP resource definitions

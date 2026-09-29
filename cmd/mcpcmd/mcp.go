@@ -24,18 +24,23 @@ import (
 const tokenEnv = "OKF_STORAGE_TOKEN"
 
 var flags struct {
-	addr string
-	dir  string
-	path string
+	addr  string
+	dir   string
+	path  string
+	stdio bool
 }
 
-// Cmd serves the MCP server over Streamable HTTP.
+// Cmd serves the MCP server over Streamable HTTP, or over stdin/stdout with
+// --stdio.
 var Cmd = &cobra.Command{
 	Use:   "mcp",
-	Short: "Serve the MCP server over HTTP",
+	Short: "Serve the MCP server over HTTP or stdio",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
+		if flags.stdio {
+			return serveStdio(ctx, flags.dir, &mcp.StdioTransport{})
+		}
 		return serve(ctx, flags.addr, flags.dir, flags.path, os.Getenv(tokenEnv))
 	},
 }
@@ -44,6 +49,28 @@ func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
 	Cmd.Flags().StringVar(&flags.dir, "dir", ".", "Knowledge bundle root directory")
 	Cmd.Flags().StringVar(&flags.path, "path", "/mcp", "HTTP path of the MCP endpoint")
+	Cmd.Flags().BoolVar(&flags.stdio, "stdio", false, "Serve over stdin/stdout instead of HTTP (no authentication)")
+	Cmd.MarkFlagsMutuallyExclusive("stdio", "addr")
+	Cmd.MarkFlagsMutuallyExclusive("stdio", "path")
+}
+
+// serveStdio serves the MCP server for the bundle at dir over t until the
+// client disconnects or ctx is cancelled. The client is the process that
+// spawned this one, so there is no authentication; logs go to stderr, keeping
+// stdout for the protocol.
+func serveStdio(ctx context.Context, dir string, t mcp.Transport) error {
+	b, err := localbundle.NewLocalBundle(dir)
+	if err != nil {
+		return err
+	}
+	defer b.Close()
+
+	slog.Info("MCP server serving over stdio", "dir", dir)
+	err = newServer(b).Run(ctx, t)
+	if ctx.Err() != nil {
+		return nil
+	}
+	return err
 }
 
 func serve(ctx context.Context, addr, dir, path, token string) error {
