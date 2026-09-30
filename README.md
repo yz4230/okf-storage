@@ -74,11 +74,12 @@ curl -fOJ -H "Authorization: Bearer $OKF_STORAGE_TOKEN" http://localhost:8080/du
 
 ## Docker
 
-The image runs `mcp --addr :8080 --dir /data` as a non-root user:
+The image runs `mcp --addr :8080` as a non-root user, with the bundle at the default
+`--dir`, `/home/nonroot/.okf-storage/bundle`:
 
 ```bash
 docker build -t okf-storage .
-docker run --rm -p 8080:8080 -v okf-data:/data -e OKF_STORAGE_TOKEN=... okf-storage
+docker run --rm -p 8080:8080 -v okf-data:/home/nonroot/.okf-storage/bundle -e OKF_STORAGE_TOKEN=... okf-storage
 ```
 
 Run one server per bundle directory: writes are serialized within a single
