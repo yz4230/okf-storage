@@ -34,8 +34,6 @@ Enable debug logging with the global `--verbose` / `-v` flag:
 go run . -v mcp
 ```
 
-Use `--path` to serve the MCP endpoint at a different path (default: `/mcp`).
-
 Set `OKF_STORAGE_TOKEN` to require `Authorization: Bearer <token>` on every request.
 Clients that cannot send headers (e.g. ChatGPT connectors) can instead put the token in the URL, `/mcp/<token>`; it is only checked when the request has no `Authorization` header.
 When the variable is unset, the server accepts unauthenticated requests, so always set it when the server is reachable from the network:
@@ -50,7 +48,7 @@ The server shuts down gracefully on `SIGINT` / `SIGTERM`.
 
 `--stdio` serves the MCP server over stdin/stdout instead of HTTP, for clients that
 launch the server as a local subprocess. No authentication is used (`OKF_STORAGE_TOKEN`
-is ignored), `/dump` is not available, and `--addr` / `--path` cannot be combined with it.
+is ignored), `/dump` is not available, and `--addr` cannot be combined with it.
 Logs go to stderr. The server exits when the client closes stdin.
 
 ```bash

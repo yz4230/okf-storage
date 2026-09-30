@@ -24,12 +24,12 @@ func (t bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 func TestHandlerAuth(t *testing.T) {
-	ts := httptest.NewServer(newHandler(newBundle(t), "/okf", "secret"))
+	ts := httptest.NewServer(newHandler(newBundle(t), "secret"))
 	t.Cleanup(ts.Close)
 
 	t.Run("valid token in path connects", func(t *testing.T) {
 		client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
-		cs, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/okf/secret"}, nil)
+		cs, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{Endpoint: ts.URL + "/mcp/secret"}, nil)
 		if err != nil {
 			t.Fatalf("Connect() error = %v", err)
 		}
@@ -39,7 +39,7 @@ func TestHandlerAuth(t *testing.T) {
 	t.Run("valid token connects", func(t *testing.T) {
 		client := mcp.NewClient(&mcp.Implementation{Name: "test"}, nil)
 		cs, err := client.Connect(t.Context(), &mcp.StreamableClientTransport{
-			Endpoint:   ts.URL + "/okf",
+			Endpoint:   ts.URL + "/mcp",
 			HTTPClient: &http.Client{Transport: bearerTransport{"secret"}},
 		}, nil)
 		if err != nil {
@@ -53,13 +53,13 @@ func TestHandlerAuth(t *testing.T) {
 		name, path, authz string
 		want              int
 	}{
-		{"missing token", "/okf", "", http.StatusUnauthorized},
-		{"wrong token", "/okf", "Bearer wrong", http.StatusUnauthorized},
-		{"other path", "/mcp", "Bearer secret", http.StatusNotFound},
-		{"wrong token in path", "/okf/wrong", "", http.StatusUnauthorized},
-		{"header wins over path", "/okf/secret", "Bearer wrong", http.StatusUnauthorized},
+		{"missing token", "/mcp", "", http.StatusUnauthorized},
+		{"wrong token", "/mcp", "Bearer wrong", http.StatusUnauthorized},
+		{"other path", "/other", "Bearer secret", http.StatusNotFound},
+		{"wrong token in path", "/mcp/wrong", "", http.StatusUnauthorized},
+		{"header wins over path", "/mcp/secret", "Bearer wrong", http.StatusUnauthorized},
 		{"token only served under path", "/secret", "", http.StatusNotFound},
-		{"cross-origin with token", "/okf/secret", "", http.StatusOK},
+		{"cross-origin with token", "/mcp/secret", "", http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -83,7 +83,7 @@ func TestHandlerAuth(t *testing.T) {
 }
 
 func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
-	ts := httptest.NewServer(newHandler(newBundle(t), "/mcp", ""))
+	ts := httptest.NewServer(newHandler(newBundle(t), ""))
 	t.Cleanup(ts.Close)
 
 	req, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", strings.NewReader("{}"))
@@ -102,7 +102,7 @@ func TestHandlerWithoutTokenRejectsCrossOrigin(t *testing.T) {
 // TestHandlerDiscover replays the server/discover request ChatGPT sends, which
 // fails unless protocol 2026-07-28 is offered.
 func TestHandlerDiscover(t *testing.T) {
-	ts := httptest.NewServer(newHandler(newBundle(t), "/mcp", ""))
+	ts := httptest.NewServer(newHandler(newBundle(t), ""))
 	t.Cleanup(ts.Close)
 
 	const discover = `{"jsonrpc":"2.0","id":"d","method":"server/discover","params":{"_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientInfo":{"name":"t","version":"0"},"io.modelcontextprotocol/clientCapabilities":{}}}}`
@@ -133,7 +133,7 @@ func TestHandlerDump(t *testing.T) {
 			t.Fatalf("Write(%q) error = %v", p, err)
 		}
 	}
-	ts := httptest.NewServer(newHandler(b, "/mcp", "secret"))
+	ts := httptest.NewServer(newHandler(b, "secret"))
 	t.Cleanup(ts.Close)
 
 	tests := []struct {

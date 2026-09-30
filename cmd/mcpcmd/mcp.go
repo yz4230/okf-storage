@@ -29,10 +29,12 @@ const tokenEnv = "OKF_STORAGE_TOKEN"
 // bundle.
 const dataDirName = ".okf-storage"
 
+// mcpPath is the HTTP path of the MCP endpoint.
+const mcpPath = "/mcp"
+
 var flags struct {
 	addr  string
 	dir   string
-	path  string
 	stdio bool
 }
 
@@ -55,17 +57,15 @@ var Cmd = &cobra.Command{
 		if flags.stdio {
 			return serveStdio(ctx, dir, &mcp.StdioTransport{})
 		}
-		return serve(ctx, flags.addr, dir, flags.path, os.Getenv(tokenEnv))
+		return serve(ctx, flags.addr, dir, os.Getenv(tokenEnv))
 	},
 }
 
 func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
 	Cmd.Flags().StringVar(&flags.dir, "dir", fmt.Sprintf("~/%s/bundle", dataDirName), "Knowledge bundle root directory")
-	Cmd.Flags().StringVar(&flags.path, "path", "/mcp", "HTTP path of the MCP endpoint")
 	Cmd.Flags().BoolVar(&flags.stdio, "stdio", false, "Serve over stdin/stdout instead of HTTP (no authentication)")
 	Cmd.MarkFlagsMutuallyExclusive("stdio", "addr")
-	Cmd.MarkFlagsMutuallyExclusive("stdio", "path")
 }
 
 // serveStdio serves the MCP server for the bundle at dir over t until the
@@ -87,7 +87,7 @@ func serveStdio(ctx context.Context, dir string, t mcp.Transport) error {
 	return err
 }
 
-func serve(ctx context.Context, addr, dir, path, token string) error {
+func serve(ctx context.Context, addr, dir, token string) error {
 	b, err := localbundle.NewLocalBundle(dir)
 	if err != nil {
 		return err
@@ -97,12 +97,12 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 	if token == "" {
 		slog.Warn("serving without authentication; set " + tokenEnv + " to require a bearer token")
 	}
-	handler := newHandler(b, path, token)
+	handler := newHandler(b, token)
 	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second}
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("MCP server listening", "addr", addr, "endpoint", path, "dir", dir, "auth", token != "")
+		slog.Info("MCP server listening", "addr", addr, "endpoint", mcpPath, "dir", dir, "auth", token != "")
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -124,17 +124,17 @@ func serve(ctx context.Context, addr, dir, path, token string) error {
 	return nil
 }
 
-// newHandler serves the MCP server for b at path, and a tar.gz download of
+// newHandler serves the MCP server for b at mcpPath, and a tar.gz download of
 // the whole bundle at GET /dump. A non-empty token makes every request
 // require "Authorization: Bearer <token>", or, for clients that cannot send
-// headers, the token as a trailing path segment ("<path>/<token>"). A request
+// headers, the token as a trailing path segment ("/mcp/<token>"). A request
 // carrying an Authorization header is judged by the header alone.
 //
 // Without a token, cross-origin browser requests are rejected so web pages
 // cannot drive an unauthenticated local server. With a token that check is
 // redundant, and it would block hosted clients such as ChatGPT that send an
 // Origin header.
-func newHandler(b bundle, path, token string) http.Handler {
+func newHandler(b bundle, token string) http.Handler {
 	server := newServer(b)
 	var h http.Handler = mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
@@ -145,13 +145,13 @@ func newHandler(b bundle, path, token string) http.Handler {
 	dump := dumpHandler(b)
 	mux := http.NewServeMux()
 	if token == "" {
-		mux.Handle(path, http.NewCrossOriginProtection().Handler(h))
+		mux.Handle(mcpPath, http.NewCrossOriginProtection().Handler(h))
 		mux.Handle("GET "+dumpPath, dump)
 		return logRequests(mux, "")
 	}
 	h = requireToken(h, token)
-	mux.Handle(path, h)
-	mux.Handle(strings.TrimSuffix(path, "/")+"/{token}", h)
+	mux.Handle(mcpPath, h)
+	mux.Handle(mcpPath+"/{token}", h)
 	dump = requireToken(dump, token)
 	mux.Handle("GET "+dumpPath, dump)
 	mux.Handle("GET "+dumpPath+"/{token}", dump)
