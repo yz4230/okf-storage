@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -36,18 +37,26 @@ var Cmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Serve the MCP server over HTTP or stdio",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		dir, err := expandHome(flags.dir)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
 		if flags.stdio {
-			return serveStdio(ctx, flags.dir, &mcp.StdioTransport{})
+			return serveStdio(ctx, dir, &mcp.StdioTransport{})
 		}
-		return serve(ctx, flags.addr, flags.dir, flags.path, os.Getenv(tokenEnv))
+		return serve(ctx, flags.addr, dir, flags.path, os.Getenv(tokenEnv))
 	},
 }
 
 func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
-	Cmd.Flags().StringVar(&flags.dir, "dir", ".", "Knowledge bundle root directory")
+	Cmd.Flags().StringVar(&flags.dir, "dir", "~/.okf-storage/bundle", "Knowledge bundle root directory")
 	Cmd.Flags().StringVar(&flags.path, "path", "/mcp", "HTTP path of the MCP endpoint")
 	Cmd.Flags().BoolVar(&flags.stdio, "stdio", false, "Serve over stdin/stdout instead of HTTP (no authentication)")
 	Cmd.MarkFlagsMutuallyExclusive("stdio", "addr")
@@ -192,4 +201,18 @@ func requireToken(next http.Handler, token string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// expandHome replaces a leading "~" path element with the user's home
+// directory.
+func expandHome(path string) (string, error) {
+	rest, ok := strings.CutPrefix(path, "~")
+	if !ok || (rest != "" && !os.IsPathSeparator(rest[0])) {
+		return path, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, rest), nil
 }

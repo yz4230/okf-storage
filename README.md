@@ -21,8 +21,8 @@ Use `--addr` to change the listen address:
 go run . mcp --addr 0.0.0.0:9000
 ```
 
-Use `--dir` to choose the knowledge bundle root directory (default: current directory).
-Existing documents are indexed by frontmatter at startup:
+Use `--dir` to choose the knowledge bundle root directory (default: `~/.okf-storage/bundle`;
+a leading `~` is expanded to your home directory):
 
 ```bash
 go run . mcp --dir ./knowledge
