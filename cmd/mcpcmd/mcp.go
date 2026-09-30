@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,6 +24,10 @@ import (
 // read from the environment rather than a flag to keep it out of process
 // listings.
 const tokenEnv = "OKF_STORAGE_TOKEN"
+
+// dataDirName is the directory under the user's home that holds the default
+// bundle.
+const dataDirName = ".okf-storage"
 
 var flags struct {
 	addr  string
@@ -56,7 +61,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
-	Cmd.Flags().StringVar(&flags.dir, "dir", "~/.okf-storage/bundle", "Knowledge bundle root directory")
+	Cmd.Flags().StringVar(&flags.dir, "dir", fmt.Sprintf("~/%s/bundle", dataDirName), "Knowledge bundle root directory")
 	Cmd.Flags().StringVar(&flags.path, "path", "/mcp", "HTTP path of the MCP endpoint")
 	Cmd.Flags().BoolVar(&flags.stdio, "stdio", false, "Serve over stdin/stdout instead of HTTP (no authentication)")
 	Cmd.MarkFlagsMutuallyExclusive("stdio", "addr")
