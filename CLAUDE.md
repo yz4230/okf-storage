@@ -12,7 +12,7 @@ A Go CLI (`okf-storage`) whose `mcp` subcommand serves an MCP server over Stream
 go run . mcp --dir ./knowledge        # run the server (-v for debug logs, --addr to change listen address)
 go run . mcp --stdio --dir ./knowledge  # run over stdio (no auth)
 mise run build                        # build to dist/okf-storage
-mise run tag <major|minor|patch>      # tag and push the next version; the tag triggers the GoReleaser release workflow
+mise run tag <major|minor|patch>      # (or M|m|p) tag and push the next version; the tag triggers the GoReleaser release workflow
 go test ./...                         # all tests
 go test ./internal/bundle -run TestName/subtest   # single test
 go vet ./...

@@ -3,17 +3,20 @@
 # to trigger the release workflow.
 #
 # Usage: scripts/tag.sh <major|minor|patch> [--dry-run]
+# M, m and p are accepted as short forms of major, minor and patch.
 set -euo pipefail
 
 usage() {
-	echo "usage: $0 <major|minor|patch> [--dry-run]" >&2
+	echo "usage: $0 <major|minor|patch|M|m|p> [--dry-run]" >&2
 	exit 2
 }
 
 bump="" dry_run=false
 for arg in "$@"; do
 	case $arg in
-	major | minor | patch) bump=$arg ;;
+	major | M) bump=major ;;
+	minor | m) bump=minor ;;
+	patch | p) bump=patch ;;
 	-n | --dry-run) dry_run=true ;;
 	*) usage ;;
 	esac
