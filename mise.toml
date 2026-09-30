@@ -1,3 +1,7 @@
 [tasks.build]
-description = "Build the binary into .output/"
-run = "go build -o .output/okf-storage ."
+description = "Build the binary into dist/"
+run = "go build -o dist/okf-storage ."
+
+[tasks.tag]
+description = "Tag the next release: mise run tag <major|minor|patch> [--dry-run]"
+run = "scripts/tag.sh"

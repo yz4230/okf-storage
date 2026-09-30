@@ -121,8 +121,23 @@ and is licensed under the Apache License 2.0 (`cmd/mcpcmd/spec.LICENSE.md`).
 
 ```bash
 mise run build
-./.output/okf-storage mcp
+./dist/okf-storage mcp
 ```
+
+## Release
+
+Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yaml`, which tests and
+builds with [GoReleaser](https://goreleaser.com) and publishes archives for
+Linux, macOS and Windows (amd64/arm64) with checksums and build provenance
+attestations to GitHub Releases. Tag the next version from an up-to-date,
+clean `main`:
+
+```bash
+mise run tag patch --dry-run   # preview: v1.2.3 -> v1.2.4
+mise run tag minor             # tag and push after confirmation
+```
+
+Verify a downloaded archive with `gh attestation verify <file> -R yz4230/okf-storage`.
 
 ## Project Structure
 
