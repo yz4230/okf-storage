@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/yz4230/okf-storage/internal/okf"
@@ -127,5 +128,27 @@ func TestHiddenPathsRejected(t *testing.T) {
 	}
 	if _, err := b.List("."); err != nil {
 		t.Errorf("List(.) error = %v", err)
+	}
+}
+
+func TestSearchSkipsInvalidDocuments(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "broken.md"), []byte("---\ntype: [\n---\nneedle\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := NewLocalBundle(dir)
+	if err != nil {
+		t.Fatalf("NewLocalBundle() error = %v", err)
+	}
+	t.Cleanup(func() { b.Close() })
+	if _, err := b.Write("a.md", "---\ntype: Concept\n---\nneedle\n"); err != nil {
+		t.Fatalf("Write(a.md) error = %v", err)
+	}
+
+	if got, err := b.SearchFrontmatter(map[string]any{"type": "Concept"}); err != nil || !slices.Equal(got, []string{"a.md"}) {
+		t.Errorf("SearchFrontmatter() = %q, %v; want [a.md]", got, err)
+	}
+	if got, err := b.SearchContent("needle"); err != nil || !slices.Equal(got, []string{"a.md"}) {
+		t.Errorf("SearchContent() = %q, %v; want [a.md]", got, err)
 	}
 }

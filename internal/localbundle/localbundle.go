@@ -13,14 +13,12 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/yz4230/okf-storage/internal/okf"
-	"golang.org/x/sync/errgroup"
 )
 
 var ErrHiddenPath = errors.New("hidden files and directories are not accessible")
@@ -208,40 +206,26 @@ func (b *LocalBundle) search(pred func(*okf.Document) bool) ([]string, error) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	var (
-		eg      errgroup.Group
-		mu      sync.Mutex
-		matches []string
-	)
-	eg.SetLimit(runtime.GOMAXPROCS(0))
+	var matches []string
 	for p, err := range b.documents() {
 		if err != nil {
 			return nil, b.relErr(err)
 		}
-		eg.Go(func() error {
-			data, err := b.root.ReadFile(p)
-			if err != nil {
-				return err
-			}
-			doc, err := okf.ParseDocument(string(data))
-			if err != nil {
-				slog.Warn("skipping invalid document", "path", p, "err", err)
-				return nil
-			}
-			if pred(doc) {
-				mu.Lock()
-				matches = append(matches, p)
-				mu.Unlock()
-			}
-			return nil
-		})
+		data, err := b.root.ReadFile(p)
+		if err != nil {
+			return nil, b.relErr(err)
+		}
+		doc, err := okf.ParseDocument(string(data))
+		if err != nil {
+			slog.Warn("skipping invalid document", "path", p, "err", err)
+			continue
+		}
+		if pred(doc) {
+			matches = append(matches, p)
+		}
 	}
 
-	if err := eg.Wait(); err != nil {
-		return nil, b.relErr(err)
-	}
 	slices.Sort(matches)
-
 	return matches, nil
 }
 

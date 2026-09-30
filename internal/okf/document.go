@@ -24,15 +24,11 @@ type Document struct {
 // returned with a nil Frontmatter and doc as its Body. This is the case for
 // reserved files such as index.md and log.md (§8, §9).
 func ParseDocument(doc string) (*Document, error) {
-	first := doc
-	if i := strings.IndexByte(doc, '\n'); i >= 0 {
-		first = doc[:i+1]
-	}
+	first, rest, _ := strings.Cut(doc, "\n")
 	if !isDelim(first) {
 		return &Document{Frontmatter: nil, Body: doc}, nil
 	}
 
-	rest := doc[len(first):]
 	offset := 0
 	for line := range strings.Lines(rest) {
 		if isDelim(line) {
