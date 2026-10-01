@@ -29,9 +29,6 @@ const tokenEnv = "OKF_STORAGE_TOKEN"
 // bundle.
 const dataDirName = ".okf-storage"
 
-// mcpPath is the HTTP path of the MCP endpoint.
-const mcpPath = "/mcp"
-
 var flags struct {
 	addr  string
 	dir   string
@@ -102,7 +99,7 @@ func serve(ctx context.Context, addr, dir, token string) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		slog.Info("MCP server listening", "addr", addr, "endpoint", mcpPath, "dir", dir, "auth", token != "")
+		slog.Info("MCP server listening", "addr", addr, "endpoint", "/mcp", "dir", dir, "auth", token != "")
 		errCh <- srv.ListenAndServe()
 	}()
 
@@ -124,7 +121,7 @@ func serve(ctx context.Context, addr, dir, token string) error {
 	return nil
 }
 
-// newHandler serves the MCP server for b at mcpPath, and a tar.gz download of
+// newHandler serves the MCP server for b at /mcp, and a tar.gz download of
 // the whole bundle at GET /dump. A non-empty token makes every request
 // require "Authorization: Bearer <token>", or, for clients that cannot send
 // headers, the token as a trailing path segment ("/mcp/<token>"). A request
@@ -145,16 +142,16 @@ func newHandler(b bundle, token string) http.Handler {
 	dump := dumpHandler(b)
 	mux := http.NewServeMux()
 	if token == "" {
-		mux.Handle(mcpPath, http.NewCrossOriginProtection().Handler(h))
-		mux.Handle("GET "+dumpPath, dump)
+		mux.Handle("/mcp", http.NewCrossOriginProtection().Handler(h))
+		mux.Handle("GET /dump", dump)
 		return logRequests(mux, "")
 	}
 	h = requireToken(h, token)
-	mux.Handle(mcpPath, h)
-	mux.Handle(mcpPath+"/{token}", h)
+	mux.Handle("/mcp", h)
+	mux.Handle("/mcp/{token}", h)
 	dump = requireToken(dump, token)
-	mux.Handle("GET "+dumpPath, dump)
-	mux.Handle("GET "+dumpPath+"/{token}", dump)
+	mux.Handle("GET /dump", dump)
+	mux.Handle("GET /dump/{token}", dump)
 	return logRequests(mux, token)
 }
 

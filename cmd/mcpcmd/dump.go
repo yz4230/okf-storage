@@ -7,9 +7,6 @@ import (
 	"time"
 )
 
-// dumpPath is the HTTP path that downloads the whole bundle as a tar.gz.
-const dumpPath = "/dump"
-
 // dumpHandler streams the bundle as a gzip-compressed tar archive. Since the
 // archive is streamed, a failure midway can only be signalled by cutting the
 // response short, which leaves the client with a truncated archive.
