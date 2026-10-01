@@ -3,6 +3,7 @@ package localbundle
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -103,7 +104,7 @@ func TestHiddenPathsRejected(t *testing.T) {
 		t.Fatalf("Write(a.md) error = %v", err)
 	}
 
-	for _, p := range []string{".git/x.md", ".hidden.md", "a/.x.md", "a/../.git/x.md", "./.git"} {
+	for _, p := range []string{".git/x.md", ".hidden.md", "a/.x.md", "a/../.git/x.md", "./.git", "/.git/x.md", "/a/.x.md"} {
 		ops := map[string]error{
 			"List":      func() error { _, err := b.List(p); return err }(),
 			"Read":      func() error { _, err := b.Read(p); return err }(),
@@ -128,6 +129,73 @@ func TestHiddenPathsRejected(t *testing.T) {
 	}
 	if _, err := b.List("."); err != nil {
 		t.Errorf("List(.) error = %v", err)
+	}
+}
+
+func TestListTrailingSlash(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "sub", "a.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b, err := NewLocalBundle(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	for _, p := range []string{"sub", "sub/", "sub//", "./sub/", "sub/.", "/sub", "/sub/"} {
+		got, err := b.List(p)
+		if err != nil {
+			t.Errorf("List(%q) error = %v", p, err)
+			continue
+		}
+		if !slices.Equal(got, []string{"a.md"}) {
+			t.Errorf("List(%q) = %v, want [a.md]", p, got)
+		}
+	}
+}
+
+func TestRootedPaths(t *testing.T) {
+	dir := t.TempDir()
+	b, err := NewLocalBundle(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+
+	if _, err := b.Write("/sub/a.md", "# A\n"); err != nil {
+		t.Fatalf("Write(/sub/a.md) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sub", "a.md")); err != nil {
+		t.Fatalf("sub/a.md: %v, want it written under the bundle root", err)
+	}
+	for _, p := range []string{"/", "//"} {
+		if got, err := b.List(p); err != nil || !slices.Equal(got, []string{"sub/"}) {
+			t.Errorf("List(%q) = %v, %v; want [sub/]", p, got, err)
+		}
+	}
+	for _, p := range []string{"/sub/a.md", "/../sub/a.md", "sub/a.md"} {
+		if got, err := b.Read(p); err != nil || got != "# A\n" {
+			t.Errorf("Read(%q) = %q, %v; want # A", p, got, err)
+		}
+	}
+	if err := b.Edit("/sub/a.md", "A", "B", false); err != nil {
+		t.Errorf("Edit(/sub/a.md) error = %v", err)
+	}
+	if err := b.Move("/sub/a.md", "/b.md"); err != nil {
+		t.Fatalf("Move(/sub/a.md, /b.md) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "sub")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("sub: %v, want the emptied directory removed", err)
+	}
+	if err := b.Delete("/b.md"); err != nil {
+		t.Errorf("Delete(/b.md) error = %v", err)
+	}
+	if _, err := b.Read("../b.md"); err == nil {
+		t.Error("Read(../b.md) error = nil, want relative paths still unable to escape the root")
 	}
 }
 

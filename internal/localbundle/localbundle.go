@@ -2,6 +2,7 @@ package localbundle
 
 import (
 	"archive/tar"
+	"cmp"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -40,15 +41,16 @@ func (b *LocalBundle) Close() error {
 	return b.root.Close()
 }
 
-func (b *LocalBundle) List(path string) ([]string, error) {
-	if err := checkPath(path); err != nil {
+func (b *LocalBundle) List(dir string) ([]string, error) {
+	dir, err := cleanPath(dir)
+	if err != nil {
 		return nil, err
 	}
 
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	entries, err := fs.ReadDir(b.root.FS(), path)
+	entries, err := fs.ReadDir(b.root.FS(), dir)
 	if err != nil {
 		return nil, b.relErr(err)
 	}
@@ -66,7 +68,8 @@ func (b *LocalBundle) List(path string) ([]string, error) {
 }
 
 func (b *LocalBundle) Read(path string) (string, error) {
-	if err := checkPath(path); err != nil {
+	path, err := cleanPath(path)
+	if err != nil {
 		return "", err
 	}
 
@@ -81,7 +84,8 @@ func (b *LocalBundle) Read(path string) (string, error) {
 }
 
 func (b *LocalBundle) Write(path string, content string) (bool, error) {
-	if err := checkPath(path); err != nil {
+	path, err := cleanPath(path)
+	if err != nil {
 		return false, err
 	}
 	if _, err := okf.ParseDocument(content); err != nil {
@@ -107,7 +111,8 @@ func (b *LocalBundle) Write(path string, content string) (bool, error) {
 }
 
 func (b *LocalBundle) Edit(path string, oldString string, newString string, replaceAll bool) error {
-	if err := checkPath(path); err != nil {
+	path, err := cleanPath(path)
+	if err != nil {
 		return err
 	}
 	if oldString == "" {
@@ -140,7 +145,8 @@ func (b *LocalBundle) Edit(path string, oldString string, newString string, repl
 }
 
 func (b *LocalBundle) Delete(path string) error {
-	if err := checkPath(path); err != nil {
+	path, err := cleanPath(path)
+	if err != nil {
 		return err
 	}
 
@@ -163,7 +169,9 @@ func (b *LocalBundle) removeEmptyParents(p string) {
 }
 
 func (b *LocalBundle) Move(oldPath string, newPath string) error {
-	if err := errors.Join(checkPath(oldPath), checkPath(newPath)); err != nil {
+	oldPath, oldErr := cleanPath(oldPath)
+	newPath, newErr := cleanPath(newPath)
+	if err := errors.Join(oldErr, newErr); err != nil {
 		return err
 	}
 
@@ -264,7 +272,7 @@ func (b *LocalBundle) documents() iter.Seq2[string, error] {
 			if err != nil {
 				return err
 			}
-			if p != "." && isHidden(d.Name()) {
+			if isHidden(d.Name()) {
 				if d.IsDir() {
 					return fs.SkipDir
 				}
@@ -284,18 +292,25 @@ func (b *LocalBundle) documents() iter.Seq2[string, error] {
 	}
 }
 
-func checkPath(p string) error {
-	for elem := range strings.SplitSeq(path.Clean(p), "/") {
-		if elem != "." && elem != ".." && isHidden(elem) {
-			return fmt.Errorf("%w: %s", ErrHiddenPath, p)
+// cleanPath returns p in the canonical form fs.FS and os.Root accept. A leading
+// slash makes p relative to the bundle root, so "/" is the root itself and
+// "/a.md" is "a.md".
+func cleanPath(p string) (string, error) {
+	c := path.Clean(p)
+	if rel, ok := strings.CutPrefix(c, "/"); ok {
+		c = cmp.Or(rel, ".")
+	}
+	for elem := range strings.SplitSeq(c, "/") {
+		if isHidden(elem) {
+			return "", fmt.Errorf("%w: %s", ErrHiddenPath, p)
 		}
 	}
-	return nil
+	return c, nil
 }
 
-func isHidden(name string) bool {
-	return strings.HasPrefix(name, ".")
-}
+// isHidden reports whether name is a dotfile. The "." and ".." path
+// elements are not hidden names.
+func isHidden(name string) bool { return name != "." && name != ".." && strings.HasPrefix(name, ".") }
 
 func match(target any, filter any) bool {
 	switch t := target.(type) {

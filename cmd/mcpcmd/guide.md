@@ -117,8 +117,9 @@ Do not put preamble, reasoning or apologies in a document.
 
 Link concepts with ordinary markdown links. Prefer bundle-relative links
 starting with `/`, which survive moving the linking document:
-`[orders](/tables/orders.md)`. The kind of relationship (joins with, depends
-on, replaces) goes in the surrounding prose. Link the first mention per
+`[orders](/tables/orders.md)`. Tools accept such a link target as a path
+as is. The kind of relationship (joins with, depends on, replaces) goes in
+the surrounding prose. Link the first mention per
 section; do not link a concept to itself. A link to a concept that does not
 exist yet is allowed and marks knowledge still to be written.
 

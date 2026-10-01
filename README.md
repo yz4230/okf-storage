@@ -86,6 +86,10 @@ Kubernetes, use `replicas: 1` with the `Recreate` deployment strategy.
 
 ## Tools
 
+Paths are relative to the bundle root and may start with `/`, matching
+bundle-relative links: `/metrics/revenue.md` and `metrics/revenue.md` name the
+same document, and `/` is the root. Results always use the form without `/`.
+
 | Tool                 | Description                                                           |
 | -------------------- | --------------------------------------------------------------------- |
 | `read`               | Read a document                                                       |

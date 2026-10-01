@@ -8,16 +8,16 @@ import (
 )
 
 type pathInput struct {
-	Path string `json:"path" jsonschema:"slash-separated document path relative to the bundle root, e.g. metrics/revenue.md"`
+	Path string `json:"path" jsonschema:"slash-separated document path relative to the bundle root, with or without a leading /, e.g. metrics/revenue.md or /metrics/revenue.md"`
 }
 
 type writeInput struct {
-	Path    string `json:"path" jsonschema:"slash-separated document path relative to the bundle root, e.g. metrics/revenue.md"`
+	Path    string `json:"path" jsonschema:"slash-separated document path relative to the bundle root, with or without a leading /, e.g. metrics/revenue.md or /metrics/revenue.md"`
 	Content string `json:"content" jsonschema:"full markdown content of the document, including any YAML frontmatter"`
 }
 
 type editInput struct {
-	Path       string `json:"path" jsonschema:"slash-separated document path relative to the bundle root"`
+	Path       string `json:"path" jsonschema:"slash-separated document path relative to the bundle root, with or without a leading /"`
 	OldString  string `json:"old_string" jsonschema:"exact text to replace; must occur exactly once unless replace_all is set"`
 	NewString  string `json:"new_string" jsonschema:"text to replace old_string with"`
 	ReplaceAll bool   `json:"replace_all,omitempty" jsonschema:"replace every occurrence of old_string"`
@@ -29,7 +29,7 @@ type moveInput struct {
 }
 
 type listInput struct {
-	Dir string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root; defaults to the root"`
+	Dir string `json:"dir,omitempty" jsonschema:"directory relative to the bundle root, with or without a leading /; defaults to the root"`
 }
 
 type searchFrontmatterInput struct {
