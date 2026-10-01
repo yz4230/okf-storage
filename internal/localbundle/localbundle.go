@@ -2,7 +2,6 @@ package localbundle
 
 import (
 	"archive/tar"
-	"cmp"
 	"compress/gzip"
 	"errors"
 	"fmt"
@@ -355,80 +354,6 @@ func (b *LocalBundle) documents() iter.Seq2[string, error] {
 			yield("", err)
 		}
 	}
-}
-
-// cleanPath returns p in the canonical form fs.FS and os.Root accept. A leading
-// slash makes p relative to the bundle root, so "/" is the root itself and
-// "/a.md" is "a.md".
-func cleanPath(p string) (string, error) {
-	c := path.Clean(p)
-	if rel, ok := strings.CutPrefix(c, "/"); ok {
-		c = cmp.Or(rel, ".")
-	}
-	for elem := range strings.SplitSeq(c, "/") {
-		if isHidden(elem) {
-			return "", fmt.Errorf("%w: %s", ErrHiddenPath, p)
-		}
-	}
-	return c, nil
-}
-
-// isHidden reports whether name is a dotfile. The "." and ".." path
-// elements are not hidden names.
-func isHidden(name string) bool { return name != "." && name != ".." && strings.HasPrefix(name, ".") }
-
-func match(target any, filter any) bool {
-	switch t := target.(type) {
-	case map[string]any:
-		f, ok := filter.(map[string]any)
-		if !ok {
-			return false
-		}
-		for k, fv := range f {
-			tv, ok := t[k]
-			if !ok || !match(tv, fv) {
-				return false
-			}
-		}
-		return true
-	case []any:
-		f, ok := filter.([]any)
-		if !ok {
-			f = []any{filter}
-		}
-		for _, fv := range f {
-			if !slices.ContainsFunc(t, func(tv any) bool { return match(tv, fv) }) {
-				return false
-			}
-		}
-		return true
-	default:
-		return equal(target, filter)
-	}
-}
-
-func equal(a, b any) bool {
-	if x, ok := number(a); ok {
-		y, ok := number(b)
-		return ok && x == y
-	}
-	switch a.(type) {
-	case string, bool, nil:
-		return a == b
-	}
-	return false
-}
-
-func number(v any) (float64, bool) {
-	switch n := v.(type) {
-	case uint64:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case float64:
-		return n, true
-	}
-	return 0, false
 }
 
 func (b *LocalBundle) relErr(err error) error {
