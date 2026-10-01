@@ -10,23 +10,31 @@ import (
 	"io/fs"
 	"iter"
 	"log/slog"
+	"math/rand/v2"
 	"os"
 	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/yz4230/okf-storage/internal/okf"
 )
 
 var ErrHiddenPath = errors.New("hidden files and directories are not accessible")
 
+const (
+	lockName               = ".okf.lock"
+	lockTimeout            = 10 * time.Second
+	lockRetryInitialDelay  = time.Millisecond
+	lockRetryMaxMultiplier = 1000
+)
+
 type LocalBundle struct {
-	mu   sync.RWMutex
-	root *os.Root
+	root     *os.Root
+	lockPath string
 }
 
 func NewLocalBundle(dir string) (*LocalBundle, error) {
@@ -34,7 +42,40 @@ func NewLocalBundle(dir string) (*LocalBundle, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LocalBundle{root: root}, nil
+	return &LocalBundle{root: root, lockPath: filepath.Join(root.Name(), lockName)}, nil
+}
+
+func (b *LocalBundle) rlock() (unlock func(), err error) { return b.lockFile((*flock.Flock).TryRLock) }
+
+func (b *LocalBundle) lock() (unlock func(), err error) { return b.lockFile((*flock.Flock).TryLock) }
+
+// lockFile opens the lock file anew on each call, so the lock also orders
+// goroutines within the process.
+func (b *LocalBundle) lockFile(try func(*flock.Flock) (bool, error)) (func(), error) {
+	fl := flock.New(b.lockPath, flock.SetPermissions(0o644))
+	deadline := time.Now().Add(lockTimeout)
+	for n, m := 1, 1; ; n++ {
+		ok, err := try(fl)
+		if err != nil {
+			return nil, b.relErr(err)
+		}
+		if ok {
+			break
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return nil, fmt.Errorf("timed out waiting for %s", lockName)
+		}
+		// Back off for 0.75 to 1.25 times m * lockRetryInitialDelay, as git does.
+		wait := lockRetryInitialDelay * time.Duration(m) * time.Duration(750+rand.IntN(500)) / 1000
+		time.Sleep(min(wait, remaining))
+		m = min(m+2*n+1, lockRetryMaxMultiplier) // (n+1)^2 = n^2 + 2n + 1
+	}
+	return func() {
+		if err := fl.Unlock(); err != nil {
+			slog.Error("failed to unlock bundle", "err", b.relErr(err))
+		}
+	}, nil
 }
 
 func (b *LocalBundle) Close() error {
@@ -47,8 +88,11 @@ func (b *LocalBundle) List(dir string) ([]string, error) {
 		return nil, err
 	}
 
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	unlock, err := b.rlock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	entries, err := fs.ReadDir(b.root.FS(), dir)
 	if err != nil {
@@ -73,8 +117,11 @@ func (b *LocalBundle) Read(path string) (string, error) {
 		return "", err
 	}
 
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	unlock, err := b.rlock()
+	if err != nil {
+		return "", err
+	}
+	defer unlock()
 
 	data, err := b.root.ReadFile(path)
 	if err != nil {
@@ -92,8 +139,11 @@ func (b *LocalBundle) Write(path string, content string) (bool, error) {
 		return false, err
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lock()
+	if err != nil {
+		return false, err
+	}
+	defer unlock()
 
 	var created bool
 	if _, err := b.root.Stat(path); errors.Is(err, fs.ErrNotExist) {
@@ -104,7 +154,7 @@ func (b *LocalBundle) Write(path string, content string) (bool, error) {
 	if err := b.root.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return false, b.relErr(err)
 	}
-	if err := b.root.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := writeFile(b.root, path, []byte(content)); err != nil {
 		return false, b.relErr(err)
 	}
 	return created, nil
@@ -122,8 +172,11 @@ func (b *LocalBundle) Edit(path string, oldString string, newString string, repl
 		return errors.New("old string and new string must differ")
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	data, err := b.root.ReadFile(path)
 	if err != nil {
@@ -141,7 +194,7 @@ func (b *LocalBundle) Edit(path string, oldString string, newString string, repl
 	if _, err := okf.ParseDocument(content); err != nil {
 		return err
 	}
-	return b.relErr(b.root.WriteFile(path, []byte(content), 0o644))
+	return b.relErr(writeFile(b.root, path, []byte(content)))
 }
 
 func (b *LocalBundle) Delete(path string) error {
@@ -150,8 +203,11 @@ func (b *LocalBundle) Delete(path string) error {
 		return err
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	if err := b.root.Remove(path); err != nil {
 		return b.relErr(err)
@@ -175,8 +231,11 @@ func (b *LocalBundle) Move(oldPath string, newPath string) error {
 		return err
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	unlock, err := b.lock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	if _, err := b.root.Stat(newPath); err == nil {
 		return &fs.PathError{Op: "move", Path: newPath, Err: fs.ErrExist}
@@ -211,8 +270,11 @@ func (b *LocalBundle) SearchContent(pattern string) ([]string, error) {
 }
 
 func (b *LocalBundle) search(pred func(*okf.Document) bool) ([]string, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	unlock, err := b.rlock()
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
 
 	var matches []string
 	for p, err := range b.documents() {
@@ -238,8 +300,11 @@ func (b *LocalBundle) search(pred func(*okf.Document) bool) ([]string, error) {
 }
 
 func (b *LocalBundle) Dump(w io.Writer) error {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	unlock, err := b.rlock()
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	zw := gzip.NewWriter(w)
 	tw := tar.NewWriter(zw)

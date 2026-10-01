@@ -4,6 +4,8 @@ go 1.27
 
 require (
 	github.com/goccy/go-yaml v1.19.2
+	github.com/gofrs/flock v0.13.1
+	github.com/google/renameio/v2 v2.0.2
 	github.com/lmittmann/tint v1.2.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/spf13/cobra v1.10.2

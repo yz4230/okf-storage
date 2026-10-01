@@ -88,9 +88,12 @@ docker run --rm -p 8080:8080 --user "$(id -u):$(id -g)" -v ~/.okf-storage/bundle
   -e OKF_STORAGE_TOKEN=... okf-storage mcp --addr :8080 --dir /bundle
 ```
 
-Run one server per bundle directory: writes are serialized within a single
-process only, and nothing stops a second server on the same directory. On
-Kubernetes, use `replicas: 1` with the `Recreate` deployment strategy.
+Several servers can share a bundle directory: every operation locks
+`.okf.lock` at the bundle root, shared for reads and exclusive for writes, and
+documents are replaced atomically, so no server sees another's write half done.
+The lock is released when a server exits, even if it crashes. Locking relies on
+`flock(2)`/`LockFileEx` and atomic renames, so keep the bundle on a local file
+system rather than NFS.
 
 ## Tools
 
