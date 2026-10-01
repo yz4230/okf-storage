@@ -18,10 +18,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/okf-storage /okf-storage
-# The bundle lives at the default --dir. Named volumes inherit this
-# ownership, so the nonroot user can write to them.
+# The bundle lives at the default --dir. A named volume mounted there
+# inherits this ownership, so the nonroot user can write to it.
 COPY --from=build --chown=nonroot:nonroot /out/home/.okf-storage /home/nonroot/.okf-storage
-VOLUME /home/nonroot/.okf-storage/bundle
 EXPOSE 8080
 ENTRYPOINT ["/okf-storage"]
 CMD ["mcp", "--addr", ":8080"]

@@ -80,6 +80,14 @@ docker build -t okf-storage .
 docker run --rm -p 8080:8080 -v okf-data:/home/nonroot/.okf-storage/bundle -e OKF_STORAGE_TOKEN=... okf-storage
 ```
 
+To keep the bundle in a host directory owned by your user instead, run as that user and
+point `--dir` at the mount; the default `--dir` is not writable by other users:
+
+```bash
+docker run --rm -p 8080:8080 --user "$(id -u):$(id -g)" -v ~/.okf-storage/bundle:/bundle \
+  -e OKF_STORAGE_TOKEN=... okf-storage mcp --addr :8080 --dir /bundle
+```
+
 Run one server per bundle directory: writes are serialized within a single
 process only, and nothing stops a second server on the same directory. On
 Kubernetes, use `replicas: 1` with the `Recreate` deployment strategy.
