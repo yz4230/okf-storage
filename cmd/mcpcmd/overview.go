@@ -127,7 +127,7 @@ func overview(b bundle) (string, error) {
 	}
 
 	if len(counts) > 0 {
-		sb.WriteString("\nFrontmatter values in use, with document counts. `search` matches exactly, so use these verbatim:\n\n")
+		sb.WriteString("\nFrontmatter values in use, with document counts. `search_frontmatter` matches exactly, so use these verbatim:\n\n")
 		for _, key := range vocabularyKeys {
 			if c := counts[key]; c != nil {
 				fmt.Fprintf(&sb, "- `%s`: %s\n", key, formatCounts(c))

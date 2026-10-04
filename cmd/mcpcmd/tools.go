@@ -123,7 +123,7 @@ func addTools(s *mcp.Server, b bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_frontmatter",
-		Description: "Find documents whose frontmatter matches every field in filter. Use it to find existing knowledge before answering, and before writing to avoid duplicates.",
+		Description: "Find documents whose frontmatter matches every field in filter, e.g. {\"filter\": {\"tags\": \"billing\"}}. Use it to find existing knowledge before answering, and before writing to avoid duplicates.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in searchFrontmatterInput) (*mcp.CallToolResult, pathsOutput, error) {
 		return pathsResult(b.SearchFrontmatter(in.Filter))

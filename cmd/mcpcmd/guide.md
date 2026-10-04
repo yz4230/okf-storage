@@ -32,8 +32,9 @@ leaves out, such as `Attested Computation` concepts and conformance rules.
 
 1. **Orient.** Read the root `index.md` if it exists, then `list` the
    directories relevant to your task. Use `search_frontmatter` to find
-   concepts by frontmatter, e.g. `{"type": "Metric"}` or `{"tags": "revenue"}`,
-   and `search_content` to find text in their bodies.
+   concepts by frontmatter, e.g. `{"filter": {"type": "Metric"}}` or
+   `{"filter": {"tags": "revenue"}}`, and `search_content` to find text in
+   their bodies.
 2. **Check before creating.** Search for an existing concept about the same
    thing (by `type`, `tags`, `resource`, likely file names). If one exists,
    extend it instead of creating a duplicate.
