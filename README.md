@@ -110,7 +110,7 @@ same document, and `/` is the root. Results always use the form without `/`.
 | `move`               | Move or rename a document; fails if the new path already exists       |
 | `list`               | List the entries directly under a directory (directories end in `/`)  |
 | `search_frontmatter` | Find documents whose frontmatter matches every field in `filter`      |
-| `search_content`     | Find documents whose body matches a regular expression                |
+| `search_content`     | Find documents whose body matches the regular expression in `query`   |
 
 ## Resources
 

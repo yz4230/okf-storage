@@ -176,8 +176,8 @@ func TestSearch(t *testing.T) {
 		{"search_frontmatter", nil, []string{"a/c.md", "a/d.md", "b.md"}},
 		{"search_frontmatter", map[string]any{"filter": map[string]any{"type": "Metric"}}, []string{"a/c.md", "b.md"}},
 		{"search_frontmatter", map[string]any{"filter": map[string]any{"tags": "billing"}}, []string{"b.md"}},
-		{"search_content", map[string]any{"pattern": "(?i)revenue"}, []string{"a/d.md", "b.md"}},
-		{"search_content", map[string]any{"pattern": "Metric"}, []string{"index.md"}},
+		{"search_content", map[string]any{"query": "(?i)revenue"}, []string{"a/d.md", "b.md"}},
+		{"search_content", map[string]any{"query": "Metric"}, []string{"index.md"}},
 	}
 	for _, tt := range tests {
 		got := callStructured[pathsOutput](t, cs, tt.tool, tt.args)
@@ -186,7 +186,7 @@ func TestSearch(t *testing.T) {
 		}
 	}
 
-	if res := call(t, cs, "search_content", map[string]any{"pattern": "("}); !res.IsError {
+	if res := call(t, cs, "search_content", map[string]any{"query": "("}); !res.IsError {
 		t.Errorf("search_content with an invalid pattern succeeded, want an error")
 	}
 }

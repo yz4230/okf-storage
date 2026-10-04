@@ -34,7 +34,7 @@ leaves out, such as `Attested Computation` concepts and conformance rules.
    directories relevant to your task. Use `search_frontmatter` to find
    concepts by frontmatter, e.g. `{"filter": {"type": "Metric"}}` or
    `{"filter": {"tags": "revenue"}}`, and `search_content` to find text in
-   their bodies.
+   their bodies, e.g. `{"query": "net revenue"}`.
 2. **Check before creating.** Search for an existing concept about the same
    thing (by `type`, `tags`, `resource`, likely file names). If one exists,
    extend it instead of creating a duplicate.
@@ -181,5 +181,5 @@ Conventional leading words are `**Creation**`, `**Update**`,
 - `search_frontmatter` sees only documents with frontmatter and matches
   values exactly: a list field such as `tags` matches if it contains the
   value, and `2` does not match `"2"`.
-- `search_content` takes a regular expression (RE2 syntax) and searches
-  document bodies only, not frontmatter.
+- `search_content` takes a regular expression (RE2 syntax) in `query` and
+  searches document bodies only, not frontmatter.

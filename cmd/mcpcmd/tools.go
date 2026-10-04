@@ -37,7 +37,7 @@ type searchFrontmatterInput struct {
 }
 
 type searchContentInput struct {
-	Pattern string `json:"pattern" jsonschema:"regular expression (Go RE2 syntax) to find in document bodies, excluding frontmatter"`
+	Query string `json:"query" jsonschema:"regular expression (Go RE2 syntax) to find in document bodies, excluding frontmatter"`
 }
 
 type pathsOutput struct {
@@ -131,10 +131,10 @@ func addTools(s *mcp.Server, b bundle) {
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "search_content",
-		Description: "Find documents whose body matches a regular expression, like grep -l. Use it for knowledge that frontmatter does not describe.",
+		Description: "Find documents whose body matches the regular expression in query, like grep -l, e.g. {\"query\": \"billing\"}. Use it for knowledge that frontmatter does not describe.",
 		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in searchContentInput) (*mcp.CallToolResult, pathsOutput, error) {
-		return pathsResult(b.SearchContent(in.Pattern))
+		return pathsResult(b.SearchContent(in.Query))
 	})
 }
 
