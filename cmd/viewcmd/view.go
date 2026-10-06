@@ -1,6 +1,7 @@
 package viewcmd
 
 import (
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -61,10 +62,9 @@ var Cmd = &cobra.Command{
 			HideBanner: true,
 			HidePort:   true,
 			ListenerAddrFunc: func(addr net.Addr) {
-				url := "http://" + browseHost(addr) + "/"
-				slog.Info("serving bundle viewer", "url", url, "dir", dir)
+				slog.Info("serving bundle viewer", "addr", addr.String(), "dir", dir)
 				if flags.open {
-					if err := openBrowser(url); err != nil {
+					if err := openBrowser(fmt.Sprintf("http://%s/", browseHost(addr))); err != nil {
 						slog.Warn("failed to open a browser", "err", err)
 					}
 				}
