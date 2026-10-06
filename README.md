@@ -139,6 +139,18 @@ mise run build
 ./dist/okf-storage mcp
 ```
 
+Print the version:
+
+```bash
+./dist/okf-storage --version
+```
+
+The version comes from the build info the Go toolchain records: the tag when
+built from a clean checkout of a `vX.Y.Z` tag (as release builds are) or with
+`go install github.com/yz4230/okf-storage@v1.2.3`, otherwise a
+pseudo-version (with `+dirty` for uncommitted changes), and `(devel)` for
+`go run`.
+
 ## Release
 
 Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yaml`, which tests and

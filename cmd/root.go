@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"time"
 
 	"github.com/lmittmann/tint"
@@ -16,7 +17,8 @@ var rootPstFlags struct {
 }
 
 var rootCmd = &cobra.Command{
-	Use: filepath.Base(os.Args[0]),
+	Use:     filepath.Base(os.Args[0]),
+	Version: version(),
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		options := &tint.Options{AddSource: true, TimeFormat: time.TimeOnly}
 		if rootPstFlags.verbose {
@@ -37,4 +39,14 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&rootPstFlags.verbose, "verbose", "v", false, "Enable verbose output")
 	rootCmd.AddCommand(mcpcmd.Cmd)
+}
+
+// version returns the main module version that the Go toolchain records:
+// the tag when built at a clean vX.Y.Z commit or with `go install ...@vX.Y.Z`,
+// otherwise a pseudo-version (+dirty for a modified tree), or (devel) for go run.
+func version() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		return info.Main.Version
+	}
+	return "(devel)"
 }
