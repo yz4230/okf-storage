@@ -1,0 +1,20 @@
+{{ define "content" }}
+<div class="container py-4">
+  <h1 class="h3 mb-3">Search</h1>
+  <form class="row g-2 mb-4" action="/search" method="get">
+    <div class="col-md-6"><input class="form-control" type="search" name="q" value="{{ .Query }}" placeholder="Text in document bodies" aria-label="Text"></div>
+    <div class="col-md-2"><input class="form-control" type="text" name="type" value="{{ .Type }}" placeholder="type" aria-label="Type"></div>
+    <div class="col-md-2"><input class="form-control" type="text" name="tag" value="{{ .Tag }}" placeholder="tag" aria-label="Tag"></div>
+    <div class="col-md-2 d-grid"><button class="btn btn-primary" type="submit">Search</button></div>
+  </form>
+
+  {{ if .Searched }}
+  <p class="text-body-secondary">{{ len .Results }} document{{ if ne (len .Results) 1 }}s{{ end }}</p>
+  {{ if .Results }}
+  <div class="card shadow-sm">{{ template "entries" .Results }}</div>
+  {{ end }}
+  {{ else }}
+  <p class="text-body-secondary">Text matches document bodies case-insensitively; type and tag match frontmatter values exactly.</p>
+  {{ end }}
+</div>
+{{ end }}

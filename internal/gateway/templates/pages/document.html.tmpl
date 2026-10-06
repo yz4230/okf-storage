@@ -1,0 +1,50 @@
+{{ define "content" }}
+<div class="container py-4">
+  {{ template "crumbs" .Crumbs }}
+  <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+    <h1 class="h3 mb-0">{{ .Title }}</h1>
+    {{ if .Type }}<a class="badge text-bg-primary text-decoration-none" href="/search?type={{ .Type }}">{{ .Type }}</a>{{ end }}
+    {{ if .Status }}<span class="badge {{ if eq .Status "deprecated" }}text-bg-danger{{ else if eq .Status "draft" }}text-bg-warning{{ else }}text-bg-success{{ end }}">{{ .Status }}</span>{{ end }}
+  </div>
+  {{ if .Description }}<p class="lead text-body-secondary mb-2">{{ .Description }}</p>{{ end }}
+  {{ if .Tags }}
+  <div class="d-flex flex-wrap gap-1 mb-3">
+    {{ range .Tags }}<a class="badge rounded-pill text-bg-light border text-decoration-none" href="/search?tag={{ . }}">#{{ . }}</a>{{ end }}
+  </div>
+  {{ end }}
+
+  {{ if .Error }}
+  <div class="alert alert-danger" role="alert">
+    <p class="mb-2">This document could not be parsed.</p>
+    <pre class="small mb-0">{{ .Error }}</pre>
+  </div>
+  <div class="card shadow-sm">
+    <div class="card-body"><pre class="mb-0">{{ .Raw }}</pre></div>
+  </div>
+  {{ else }}
+  {{ if .Fields }}
+  <details class="card shadow-sm mb-4">
+    <summary class="card-header small text-body-secondary">Frontmatter</summary>
+    <div class="table-responsive">
+      <table class="table table-sm frontmatter mb-0 align-top">
+        <tbody>
+          {{ range .Fields }}
+          <tr>
+            <th scope="row" class="ps-3"><code>{{ .Key }}</code></th>
+            <td class="pe-3">
+              {{ if .YAML }}<pre class="small">{{ .YAML }}</pre>{{ else if .URL }}<a href="{{ .URL }}" rel="noreferrer">{{ .Text }}</a>{{ else }}{{ .Text }}{{ end }}
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {{ end }}
+  <article class="card shadow-sm">
+    <div class="card-body markdown-body">{{ .Body }}</div>
+  </article>
+  {{ end }}
+  <p class="small text-body-secondary mt-2 mb-0"><code>{{ .Path }}</code></p>
+</div>
+{{ end }}

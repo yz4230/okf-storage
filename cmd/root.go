@@ -10,6 +10,7 @@ import (
 	"github.com/lmittmann/tint"
 	"github.com/spf13/cobra"
 	"github.com/yz4230/okf-storage/cmd/mcpcmd"
+	"github.com/yz4230/okf-storage/cmd/viewcmd"
 )
 
 var rootPstFlags struct {
@@ -38,7 +39,7 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&rootPstFlags.verbose, "verbose", "v", false, "Enable verbose output")
-	rootCmd.AddCommand(mcpcmd.Cmd)
+	rootCmd.AddCommand(mcpcmd.Cmd, viewcmd.Cmd)
 }
 
 // version returns the main module version that the Go toolchain records:

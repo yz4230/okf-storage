@@ -70,6 +70,30 @@ It requires the same token as the MCP endpoint (`Authorization: Bearer <token>`,
 curl -fOJ -H "Authorization: Bearer $OKF_STORAGE_TOKEN" http://localhost:8080/dump
 ```
 
+### View
+
+`view` serves a read-only web UI for browsing the bundle, on `localhost:8081` by default.
+It takes the same `--dir` as `mcp`; `--addr` changes the listen address and `--open` opens
+the default browser:
+
+```bash
+go run . view --dir ./knowledge --open
+```
+
+Pages mirror the bundle layout, so links between documents work as written, whether
+relative (`orders.md`) or bundle-relative (`/tables/orders.md`):
+
+| Path              | Page                                                                    |
+| ----------------- | ----------------------------------------------------------------------- |
+| `/`, `/<dir>/`    | The directory's `index.md`, rendered, then its entries with titles      |
+| `/<path>.md`      | The document: frontmatter (`type`, `status`, `tags`, other keys) and body |
+| `/<path>`         | Any other file (e.g. an image a document embeds), served as is          |
+| `/search`         | Documents whose body contains `q` (plain text, case-insensitive), filtered by `type` and `tag` |
+
+Markdown is rendered on the server with [goldmark](https://github.com/yuin/goldmark)
+(GFM, footnotes, definition lists, CJK line breaks). Raw HTML in documents is omitted.
+There is no editing and no authentication, so keep `--addr` on localhost.
+
 ## Docker
 
 The image runs `mcp --addr :8080` as a non-root user, with the bundle at the default
@@ -172,6 +196,8 @@ Verify a downloaded archive with `gh attestation verify <file> -R yz4230/okf-sto
 .
 ├── cmd/
 │   ├── root.go          # root command and logger setup
+│   ├── viewcmd/
+│   │   └── view.go      # `view` command: read-only web UI
 │   └── mcpcmd/
 │       ├── mcp.go       # `mcp` command and HTTP / stdio bootstrap
 │       ├── server.go    # MCP server construction
@@ -183,6 +209,8 @@ Verify a downloaded archive with `gh attestation verify <file> -R yz4230/okf-sto
 │       ├── guide.md     # agent guide served as okf://guide
 │       └── spec.md      # OKF v0.2 specification served as okf://spec
 ├── internal/
+│   ├── bundledir/       # default and `~` expansion of --dir
+│   ├── gateway/         # web UI handlers, markdown rendering, HTML templates
 │   ├── localbundle/     # knowledge bundle on the local filesystem
 │   └── okf/             # OKF document and frontmatter parser
 ├── main.go
@@ -195,3 +223,5 @@ Verify a downloaded archive with `gh attestation verify <file> -R yz4230/okf-sto
 - [`github.com/modelcontextprotocol/go-sdk`](https://github.com/modelcontextprotocol/go-sdk)
 - [`github.com/spf13/cobra`](https://github.com/spf13/cobra)
 - [`github.com/lmittmann/tint`](https://github.com/lmittmann/tint)
+- [`github.com/labstack/echo/v5`](https://github.com/labstack/echo)
+- [`github.com/yuin/goldmark`](https://github.com/yuin/goldmark)

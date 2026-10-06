@@ -1,0 +1,23 @@
+{{ define "content" }}
+<div class="container py-4">
+  {{ template "crumbs" .Crumbs }}
+  <h1 class="h3 mb-4"><code class="text-body">{{ .Path }}</code></h1>
+
+  {{ if .Index }}
+  <div class="card shadow-sm mb-4">
+    <div class="card-header small text-body-secondary">index.md</div>
+    <div class="card-body markdown-body">{{ .Index }}</div>
+  </div>
+  {{ end }}
+
+  <div class="card shadow-sm">
+    {{ if .Entries }}
+    {{ template "entries" .Entries }}
+    {{ else }}
+    <div class="card-body text-center py-5">
+      <p class="text-body-secondary mb-0">This directory is empty.</p>
+    </div>
+    {{ end }}
+  </div>
+</div>
+{{ end }}
