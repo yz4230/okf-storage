@@ -4,12 +4,10 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+	"github.com/yz4230/okf-storage/internal/bundledir"
 	"github.com/yz4230/okf-storage/internal/localbundle"
 )
 
@@ -24,10 +23,6 @@ import (
 // read from the environment rather than a flag to keep it out of process
 // listings.
 const tokenEnv = "OKF_STORAGE_TOKEN"
-
-// dataDirName is the directory under the user's home that holds the default
-// bundle.
-const dataDirName = ".okf-storage"
 
 var flags struct {
 	addr  string
@@ -41,7 +36,7 @@ var Cmd = &cobra.Command{
 	Use:   "mcp",
 	Short: "Serve the MCP server over HTTP or stdio",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		dir, err := expandHome(flags.dir)
+		dir, err := bundledir.Expand(flags.dir)
 		if err != nil {
 			return err
 		}
@@ -60,7 +55,7 @@ var Cmd = &cobra.Command{
 
 func init() {
 	Cmd.Flags().StringVar(&flags.addr, "addr", "localhost:8080", "Address to listen on")
-	Cmd.Flags().StringVar(&flags.dir, "dir", fmt.Sprintf("~/%s/bundle", dataDirName), "Knowledge bundle root directory")
+	Cmd.Flags().StringVar(&flags.dir, "dir", bundledir.Default, "Knowledge bundle root directory")
 	Cmd.Flags().BoolVar(&flags.stdio, "stdio", false, "Serve over stdin/stdout instead of HTTP (no authentication)")
 	Cmd.MarkFlagsMutuallyExclusive("stdio", "addr")
 }
@@ -203,18 +198,4 @@ func requireToken(next http.Handler, token string) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-// expandHome replaces a leading "~" path element with the user's home
-// directory.
-func expandHome(path string) (string, error) {
-	rest, ok := strings.CutPrefix(path, "~")
-	if !ok || (rest != "" && !os.IsPathSeparator(rest[0])) {
-		return path, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, rest), nil
 }
