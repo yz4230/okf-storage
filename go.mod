@@ -11,7 +11,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/spf13/cobra v1.10.2
 	github.com/yuin/goldmark v1.8.6
-	github.com/yz4230/mcpauth v0.0.0-20261119145129-01e88b6037a1
+	github.com/yz4230/mcpauth v0.1.1-0.20261119154646-111f5dedddf9
 )
 
 require (
