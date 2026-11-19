@@ -4,6 +4,17 @@ OKF storage CLI with an MCP (Model Context Protocol) server served over stdio or
 It manages a knowledge bundle: a directory of markdown documents in the
 [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md) (OKF v0.2).
 
+## Contents
+
+- [Installation](#installation)
+- [Usage](#usage)
+  - [MCP server (stdio)](#mcp-server-stdio)
+    - [Add to Claude Code](#add-to-claude-code)
+    - [Add to Claude Desktop](#add-to-claude-desktop)
+  - [MCP server (HTTP)](#mcp-server-http)
+  - [Web viewer](#web-viewer)
+- [Tools](#tools)
+
 ## Installation
 
 With [mise](https://mise.jdx.dev):
@@ -63,6 +74,9 @@ Claude Desktop does not read your shell's `PATH`, so give the absolute path that
 
 ### MCP server (HTTP)
 
+<details>
+<summary>Serve over HTTP with OAuth or a static token</summary>
+
 ```bash
 OKF_STORAGE_PASSWORD=$(openssl rand -hex 16) okf-storage mcp --public-url https://okf.example.com
 ```
@@ -94,6 +108,8 @@ curl -fOJ -H "Authorization: Bearer $OKF_STORAGE_TOKEN" https://okf.example.com/
 ```
 
 When neither variable is set, the server accepts unauthenticated requests, so always set one when the server is reachable from the network.
+
+</details>
 
 ### Web viewer
 
