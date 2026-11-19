@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-A Go CLI (`okf-storage`) whose `view` subcommand serves a read-only web UI for browsing a bundle (default `localhost:8081`), and whose `mcp` subcommand serves an MCP server over Streamable HTTP (`/mcp`, default `localhost:8080`), or over stdin/stdout with `--stdio` (unauthenticated, for local use). The server manages a "knowledge bundle": a directory of markdown documents in the Open Knowledge Format (OKF v0.2), searchable by their YAML frontmatter. Requires Go 1.27 (uses `os.Root`, `new(expr)`, `strings.Lines`, `http.NewCrossOriginProtection`).
+A Go CLI (`okf-storage`) whose `view` subcommand serves a read-only web UI for browsing a bundle (default `localhost:8081`), and whose `mcp` subcommand serves an MCP server over Streamable HTTP (`/mcp`, default `localhost:8080`, behind OAuth from `github.com/yz4230/mcpauth` when `OKF_STORAGE_PASSWORD` and `--public-url` are set, with its state in `.okf-oauth.json` at the bundle root, and/or behind a static `Authorization: Bearer` token from `OKF_STORAGE_TOKEN`), or over stdin/stdout with `--stdio` (unauthenticated, for local use). The server manages a "knowledge bundle": a directory of markdown documents in the Open Knowledge Format (OKF v0.2), searchable by their YAML frontmatter. Requires Go 1.27.4 (uses `os.Root`, `new(expr)`, `strings.Lines`, `http.NewCrossOriginProtection`).
 
 ## Commands
 
@@ -37,4 +37,4 @@ Several processes may share a bundle; the lock file needs a local file system (n
 
 - Tests: MCP tools are tested end-to-end through `mcp.NewInMemoryTransports` against a `LocalBundle` in `t.TempDir()` (see `connect` in `tools_test.go`).
 - Commits use Conventional Commits with a scope, e.g. `feat(bundle): ...`, `refactor(mcp): ...`.
-- Keep the README's tool/resource tables in sync when adding or changing MCP tools or resources.
+- Keep the README's tool table in sync when adding or changing MCP tools.
